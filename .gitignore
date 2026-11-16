@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Autos judiciais têm CPF, RG, endereço e dados de saúde (LGPD): nunca versionar.
+input/*
+output/*
+!input/.gitkeep
+!output/.gitkeep

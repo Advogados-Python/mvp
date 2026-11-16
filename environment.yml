@@ -1,0 +1,12 @@
+name: ribeiro-e-souza
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  # Só para o notebook de apresentação (apresentacao.ipynb); o programa em si usa apenas o requirements.txt
+  - jupyterlab
+  - ipykernel
+  - pandas
+  - pip:
+      - -r requirements.txt   # dependências do programa (rode o comando na raiz do projeto)
