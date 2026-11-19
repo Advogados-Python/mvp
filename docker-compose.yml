@@ -1,0 +1,53 @@
+# Sobe tudo localmente: Postgres + API + frontend.
+#
+#   cp .env.example .env     # preencha os segredos
+#   docker compose up --build
+#   -> frontend em http://localhost:3000 · API em http://localhost:8000/docs
+#
+# Primeiro usuário: defina RIBEIRO_ADMIN_EMAIL e RIBEIRO_ADMIN_SENHA no .env (criado na primeira subida),
+# ou depois:  docker compose exec api python -m backend.cli criar-usuario --email ... --nome ... --admin
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ribeiro
+      POSTGRES_USER: ribeiro
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    volumes:
+      - pgdados:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ribeiro -d ribeiro"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://ribeiro:${POSTGRES_PASSWORD}@db:5432/ribeiro
+      RIBEIRO_JWT_SEGREDO: ${RIBEIRO_JWT_SEGREDO:?defina RIBEIRO_JWT_SEGREDO no .env (openssl rand -hex 32)}
+      RIBEIRO_ADMIN_EMAIL: ${RIBEIRO_ADMIN_EMAIL:-}
+      RIBEIRO_ADMIN_SENHA: ${RIBEIRO_ADMIN_SENHA:-}
+      RIBEIRO_CORS_ORIGINS: ${RIBEIRO_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    volumes:
+      - dados:/data
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"   # só a sua máquina enxerga; para expor, ponha HTTPS na frente
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdados:
+  dados:

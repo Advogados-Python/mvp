@@ -1,1 +1,11 @@
+# Dependências de EXECUÇÃO. O CLI (main.py) só precisa do pymupdf; o resto é a API (backend/).
 pymupdf>=1.24
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9      # exigido pelo FastAPI para receber upload de arquivos
+sqlalchemy>=2.0
+psycopg[binary]>=3.1         # driver do Postgres (em produção); o SQLite já vem com o Python
+pwdlib[argon2]>=0.2          # hash de senhas (Argon2)
+pyjwt>=2.8
+pydantic-settings>=2.2

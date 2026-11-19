@@ -1,0 +1,15 @@
+# Fora da imagem do backend: dados pessoais (LGPD), ambientes locais e o que não roda em produção.
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+!.env.example
+input
+output
+data
+labs
+tests
+frontend
+*.md

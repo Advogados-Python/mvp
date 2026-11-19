@@ -8,3 +8,13 @@ input/*
 output/*
 !input/.gitkeep
 !output/.gitkeep
+
+# Segredos e dados locais da API (PDFs enviados, SQLite): nunca versionar.
+.env
+.env.*
+!.env.example
+data/
+
+# instalação em modo editável (pip install -e .)
+*.egg-info/
+build/
