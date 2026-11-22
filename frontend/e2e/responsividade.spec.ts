@@ -24,7 +24,7 @@ const LISTA = [
     avisos: ["Menções condicionais/futuras a pagamento foram ignoradas (pág. 4, 9).", "Número do processo (CNJ) não encontrado."],
   }),
   resumoFalso({ id: idN(2), numero_processo: "7654321-10.2024.4.01.3500", tribunal: "TRF1", fase: "QUITADO", divida_paga: "SIM", fase_descricao: "Paga." }),
-  { ...processoEmAndamentoFalso("ANALISANDO", progresso("ANALISANDO_FASES", 120, 300)), id: idN(3), arquivo: "autos-completos-vol-1-de-3-com-nome-muito-comprido-para-testar-truncamento.pdf" },
+  { ...processoEmAndamentoFalso("ANALISANDO", progresso("BUSCANDO_TERMOS", 120, 300)), id: idN(3), arquivo: "autos-completos-vol-1-de-3-com-nome-muito-comprido-para-testar-truncamento.pdf" },
   { ...processoEmAndamentoFalso("PENDENTE"), id: idN(4), arquivo: "na-fila.pdf" },
   { ...processoEmAndamentoFalso("FALHOU", progresso("LENDO_PDF")), id: idN(5), arquivo: "quebrado.pdf" },
   resumoFalso({ id: idN(6), numero_processo: null, tribunal: null, classe: null, partes: [], fase: "SEM_INFORMACAO", divida_paga: "SEM_INFORMACAO", arquivo: "sem-numero.pdf", avisos: ["Número do processo (CNJ) não encontrado."] }),
@@ -128,7 +128,7 @@ for (const tela of TELAS) {
       await page.screenshot({ path: `test-results/telas/upload-${tela.nome}.png`, fullPage: false });
     });
 
-    test("detalhe concluído: hierarquia, ações adaptadas à largura e seções recolhíveis", async ({ page }) => {
+    test("detalhe concluído: o processo fase a fase, ações adaptadas à largura e seções recolhíveis", async ({ page }) => {
       const detalhe = detalheFalso(
         {
           id: idN(1),
@@ -154,93 +154,75 @@ for (const tela of TELAS) {
         expect(c.height).toBeGreaterThanOrEqual(36);
       }
 
-      // ordem de leitura: informações do processo → andamento do crédito (o centro) → confiabilidade → todas as evidências
+      // ordem de leitura: a resposta em destaque → os avisos (sempre à vista) → as seis fases, na ordem em que rodaram
       const y = async (texto: string) => (await page.getByText(texto, { exact: false }).first().boundingBox())!.y;
-      expect(await y("Informações do processo")).toBeLessThan(await y("Andamento do crédito"));
-      expect(await y("Andamento do crédito")).toBeLessThan(await y("A dívida já foi paga?"));
-      expect(await y("A dívida já foi paga?")).toBeLessThan(await y("Confiabilidade da análise"));
-      expect(await y("Confiabilidade da análise")).toBeLessThan(await y("Todas as evidências"));
-      // a evidência principal fica no próprio andamento, junto da fase que ela sustenta
-      const andamento = page.locator("section").filter({ has: page.getByRole("heading", { name: "Andamento do crédito" }) });
-      await expect(andamento.getByText("Evidência principal")).toBeVisible();
-      await expect(andamento.getByRole("button", { name: /Conferir na pág\. 42/ })).toBeVisible();
-      await expect(andamento.getByText("Fase atual do crédito")).toBeVisible();
-      await expect(andamento.getByText("Ação recomendada")).toBeVisible();
-      await expect(andamento.getByRole("listitem")).toHaveCount(6); // a escada reaproveitada: as 6 etapas
-      await expect(andamento.getByText("Etapa 4 de 6")).toBeVisible();
-      await expect(page.getByRole("button", { name: /^Dados do processo/ })).toHaveCount(0);
+      expect(await y("A dívida já foi paga?")).toBeLessThan(await y("Leia estes avisos antes de confiar no resultado"));
+      expect(await y("Leia estes avisos antes de confiar no resultado")).toBeLessThan((await page.getByRole("list", { name: "Fases do processo" }).boundingBox())!.y);
+      await expect(page.getByRole("alert").filter({ hasText: "Mais da metade do PDF não foi lida" })).toBeVisible();
+      const titulos = page.getByRole("list", { name: "Fases do processo" }).getByRole("heading", { level: 2 });
+      await expect(titulos).toHaveCount(6);
+      const ys = await titulos.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().y));
+      expect(ys.every((v, i) => i === 0 || v > ys[i - 1]), "as seis fases empilhadas, uma abaixo da outra").toBe(true);
 
-      // resumo compacto em colunas (autor/réu, juiz(a), valor requisitado): 4 no desktop, 2 no tablet, partes em linha cheia no celular
+      // a identificação começa aberta, com os dados em colunas: 4 no desktop, 2 no tablet, 1 no celular
       const campo = async (rotulo: string) => (await page.getByText(rotulo, { exact: true }).first().boundingBox())!;
-      const [exequente, executado, juiz, requisitado] = [await campo("Exequente"), await campo("Executado"), await campo("Juiz(a)"), await campo("Valor requisitado")];
+      const [numero, tribunal, classe, orgao] = [await campo("Número do processo"), await campo("Tribunal"), await campo("Classe"), await campo("Órgão julgador")];
       const mesmaLinha = (a: { y: number }, b: { y: number }) => Math.abs(a.y - b.y) < 6;
       if (tela.largura >= 1024) {
-        expect([exequente, executado, juiz, requisitado].every((c) => mesmaLinha(c, exequente)), "desktop: quatro campos na mesma linha").toBe(true);
-        expect(exequente.x < executado.x && executado.x < juiz.x && juiz.x < requisitado.x).toBe(true);
+        expect([numero, tribunal, classe, orgao].every((c) => mesmaLinha(c, numero)), "desktop: quatro campos na mesma linha").toBe(true);
+        expect(numero.x < tribunal.x && tribunal.x < classe.x && classe.x < orgao.x).toBe(true);
       } else if (tela.largura >= 640) {
-        expect(mesmaLinha(exequente, executado) && mesmaLinha(juiz, requisitado), "tablet: dois campos por linha").toBe(true);
-        expect(juiz.y).toBeGreaterThan(exequente.y + 8);
+        expect(mesmaLinha(numero, tribunal) && mesmaLinha(classe, orgao), "tablet: dois campos por linha").toBe(true);
+        expect(classe.y).toBeGreaterThan(numero.y + 8);
       } else {
-        expect(executado.y, "celular: cada parte em linha cheia").toBeGreaterThan(exequente.y + 8);
-        expect(mesmaLinha(juiz, requisitado), "celular: juiz(a) e valor lado a lado").toBe(true);
+        expect(tribunal.y > numero.y + 8 && classe.y > tribunal.y + 8, "celular: um campo por linha").toBe(true);
       }
 
-      // o complemento fica numa seção expansível (recolhida por padrão)
-      const maisInfo = page.getByRole("button", { name: /^Mais informações/ });
-      await expect(maisInfo).toHaveAttribute("aria-expanded", "false");
-      await maisInfo.click();
-      await expect(maisInfo).toHaveAttribute("aria-expanded", "true");
-      for (const rotulo of ["Órgão julgador", "Valor da causa", "Advogados", "OAB (mais citadas)", "Posição do processo", "Arquivo"]) {
-        await expect(page.getByText(rotulo, { exact: true })).toBeVisible();
-      }
-      await maisInfo.click();
-      await expect(maisInfo).toHaveAttribute("aria-expanded", "false");
+      // fases recolhíveis: a extração começa fechada; abre e fecha
+      const extracao = page.getByRole("button", { name: /2\. Extraindo conteúdo/ });
+      await expect(extracao).toHaveAttribute("aria-expanded", "false");
+      await extracao.click();
+      await expect(extracao).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByText("(80 sem texto)")).toBeVisible();
+      await extracao.click();
+      await expect(extracao).toHaveAttribute("aria-expanded", "false");
 
-      // espaçamento consistente entre as seções (12 px no celular, 16 px a partir do tablet) e largura de leitura de até 6xl (1152 px)
-      const secoes = await caixas(page, "main > div > section");
-      expect(secoes).toHaveLength(4);
-      const esperado = tela.largura >= 640 ? 16 : 12;
-      secoes.slice(1).forEach((secao, i) => expect(Math.abs(secao.y - (secoes[i].y + secoes[i].h) - esperado), `espaço entre as seções ${i + 1} e ${i + 2}`).toBeLessThanOrEqual(1.5));
-      expect(Math.max(...secoes.map((secao) => secao.w))).toBeLessThanOrEqual(1152 + 1);
-
-      // alertas críticos nunca recolhidos
-      await expect(page.getByRole("alert").filter({ hasText: "Mais da metade do PDF não foi lida" })).toBeVisible();
-      await expect(page.getByText("Leia estes avisos antes de confiar no resultado")).toBeVisible();
-
-      // evidências: muitas (40) → começa recolhida; ao abrir mostra 10 e o resto sob demanda
-      const botaoEvidencias = page.getByRole("button", { name: /^Todas as evidências/ });
-      await expect(botaoEvidencias).toHaveAttribute("aria-expanded", "false");
-      await botaoEvidencias.click();
-      await expect(botaoEvidencias).toHaveAttribute("aria-expanded", "true");
+      // evidências: muitas (40) → a busca de termos começa recolhida; ao abrir mostra 10 e o resto sob demanda
+      const busca = page.getByRole("button", { name: /4\. Buscando os termos/ });
+      await expect(busca).toHaveAttribute("aria-expanded", "false");
+      await busca.click();
+      await expect(busca).toHaveAttribute("aria-expanded", "true");
       const itens = page.locator("section[aria-labelledby^='fase-'] li");
-      // visão padrão "que decidem a fase": 28 dos 40 achados (os demais são condicionais ou de peça da parte)
       await expect(page.getByRole("button", { name: "Que decidem a fase (28)" })).toHaveAttribute("aria-pressed", "true");
       await expect(itens).toHaveCount(10);
       await page.getByRole("button", { name: /^Mostrar mais/ }).click();
       await expect(itens).toHaveCount(28);
       await expect(page.getByRole("button", { name: /^Mostrar mais/ })).toHaveCount(0);
-      // "Todas (40)": volta a 10 e o "Mostrar todas" abre o restante de uma vez
       await page.getByRole("button", { name: "Todas (40)" }).click();
       await expect(itens).toHaveCount(10);
       await page.getByRole("button", { name: /^Mostrar todas/ }).click();
       await expect(itens).toHaveCount(40);
+
+      // espaçamento consistente entre os blocos (12 px no celular, 16 px a partir do tablet) e largura de leitura de até 6xl (1152 px)
+      const blocos = await caixas(page, "main > div > *");
+      const esperado = tela.largura >= 640 ? 16 : 12;
+      const direitos = blocos.slice(1); // depois do cabeçalho
+      direitos.slice(1).forEach((bloco, i) => expect(Math.abs(bloco.y - (direitos[i].y + direitos[i].h) - esperado), `espaço entre os blocos ${i + 1} e ${i + 2}`).toBeLessThanOrEqual(1.5));
+      expect(Math.max(...blocos.map((bloco) => bloco.w))).toBeLessThanOrEqual(1152 + 1);
       await semRolagemHorizontal(page);
-      await page.waitForTimeout(500); // a seção anima a altura (300 ms): fotografa só depois de assentar
+      await page.waitForTimeout(500); // as seções animam a altura (300 ms): fotografa só depois de assentar
       await page.screenshot({ path: `test-results/telas/detalhe-${tela.nome}.png`, fullPage: true });
     });
 
-    test("detalhe em andamento: etapas na horizontal no desktop e na vertical no celular", async ({ page }) => {
-      await simularApi(page, { detalhe: { ...processoEmAndamentoFalso("ANALISANDO", progresso("ANALISANDO_FASES", 120, 300)), id: idN(3) } });
+    test("detalhe em andamento: as fases empilhadas, a ativa com a contagem real", async ({ page }) => {
+      await simularApi(page, { detalhe: { ...processoEmAndamentoFalso("ANALISANDO", progresso("BUSCANDO_TERMOS", 120, 300)), id: idN(3) } });
       await page.goto(`/processos/${idN(3)}`);
       await expect(page.getByText("120 de 300 páginas analisadas")).toBeVisible();
       await semRolagemHorizontal(page);
-      const passos = await caixas(page, 'ol li');
+      const passos = await caixas(page, 'ol[aria-label="Fases do processo"] > li');
       expect(passos).toHaveLength(6);
-      if (tela.largura >= 768) {
-        expect(new Set(passos.map((p) => Math.round(p.y))).size, "etapas lado a lado").toBe(1);
-      } else {
-        expect(passos.every((p, i) => i === 0 || p.y > passos[i - 1].y), "etapas empilhadas").toBe(true);
-      }
+      expect(passos.every((p, i) => i === 0 || p.y > passos[i - 1].y), "as fases empilhadas").toBe(true);
+      for (const p of passos) expect(p.x + p.w).toBeLessThanOrEqual(tela.largura);
       await page.waitForTimeout(500); // deixa a animação de entrada (320 ms) terminar
       await page.screenshot({ path: `test-results/telas/andamento-${tela.nome}.png`, fullPage: true });
     });
@@ -248,7 +230,7 @@ for (const tela of TELAS) {
     test("detalhe com falha e o estado vazio do histórico", async ({ page }) => {
       await simularApi(page, { detalhe: { ...processoEmAndamentoFalso("FALHOU", { etapa: "IDENTIFICANDO", atual: null, total: null, falhou: true }), id: idN(5) } });
       await page.goto(`/processos/${idN(5)}`);
-      await expect(page.getByText("A análise parou em “Identificando o processo”.")).toBeVisible();
+      await expect(page.getByText("A análise parou aqui")).toBeVisible();
       await semRolagemHorizontal(page);
       await page.screenshot({ path: `test-results/telas/falha-${tela.nome}.png`, fullPage: true });
 

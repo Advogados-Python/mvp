@@ -7,9 +7,9 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from backend.main import criar_app
-from backend.processos import fila as modulo_fila
-from backend.processos.analise import analisar_processo
-from backend.processos.modelos import Processo
+from backend import pipeline as modulo_fila
+from backend.pipeline import analisar_processo
+from backend.receive.models import Processo
 from tests.apoio_backend import PDF_PAGO, PDF_REQUISICAO, BaseApi, configuracao
 
 
@@ -69,14 +69,14 @@ class TestReivindicacaoERecuperacao(BaseApi):
         token = self.login()
         id_ = self.enviar(token, ("p.pdf", PDF_PAGO)).json()["processos"][0]["id"]  # já CONCLUIDO
         antes = self.client.get(f"/api/processos/{id_}", headers=self.cabecalho(token)).json()
-        with mock.patch("backend.processos.analise.processar_pdf") as leitor:
+        with mock.patch("backend.pipeline.processar_pdf") as leitor:
             analisar_processo(self.app.state.fabrica, self.app.state.armazem, id_)  # segundo worker chega atrasado
         leitor.assert_not_called()
         self.assertEqual(self.client.get(f"/api/processos/{id_}", headers=self.cabecalho(token)).json(), antes)
 
     def test_ao_subir_devolve_pendentes_e_analisando_para_a_fila(self):
         token = self.login()
-        with mock.patch("backend.processos.analise.processar_pdf", side_effect=AssertionError("não deveria rodar")):
+        with mock.patch("backend.pipeline.processar_pdf", side_effect=AssertionError("não deveria rodar")):
             pass
         # primeiro "servidor": aceita os envios mas não chega a analisar (como se tivesse caído)
         with mock.patch.object(self.app.state.fila, "enfileirar", lambda id_: None):

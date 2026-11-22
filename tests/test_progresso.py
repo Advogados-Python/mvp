@@ -12,15 +12,18 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from backend.leitor import constantes as const
-from backend.leitor.funcoes import processar_pdf as processar_de_verdade
-from backend.processos import fila as modulo_fila
-from backend.processos import progresso as modulo_progresso
-from backend.processos.progresso import ETAPAS, RegistroProgresso
+from backend import pipeline as modulo_fila
+from backend import pipeline as modulo_progresso
+from backend.pipeline import ETAPAS, RegistroProgresso
+from backend.pipeline import processar_pdf as processar_de_verdade
+from backend.extract.models import STAGE as LENDO_PDF
+from backend.identify.models import STAGE as IDENTIFICANDO
+from backend.search.models import STAGE as BUSCANDO_TERMOS
+from backend.validate.models import STAGE as VALIDANDO
 from tests.apoio_backend import PDF_PAGO, PDF_PROTEGIDO, PDF_REQUISICAO, BaseApi, gerar_pdf
 
-ANALISE = "backend.processos.analise.processar_pdf"
-FILA = "backend.processos.fila.analisar_processo"
+ANALISE = "backend.pipeline.processar_pdf"
+FILA = "backend.pipeline.analisar_processo"
 
 
 class TestLeitorInformaAsEtapas(unittest.TestCase):
@@ -38,14 +41,14 @@ class TestLeitorInformaAsEtapas(unittest.TestCase):
         sem_repeticao = [e for i, e in enumerate(etapas) if i == 0 or e != etapas[i - 1]]
         self.assertEqual(
             sem_repeticao,
-            [const.ETAPA_LENDO_PDF, const.ETAPA_IDENTIFICANDO, const.ETAPA_ANALISANDO_FASES, const.ETAPA_VALIDANDO],
+            [LENDO_PDF, IDENTIFICANDO, BUSCANDO_TERMOS, VALIDANDO],
         )
-        for etapa in (const.ETAPA_LENDO_PDF, const.ETAPA_ANALISANDO_FASES):
+        for etapa in (LENDO_PDF, BUSCANDO_TERMOS):
             paginas = [(atual, total) for e, atual, total in chamadas if e == etapa and atual is not None]
             self.assertEqual(paginas[0], (0, 3))  # o total é conhecido antes da primeira página
             self.assertEqual(paginas[-1], (3, 3))  # e termina em n/n
             self.assertEqual([a for a, _ in paginas], sorted(a for a, _ in paginas))  # nunca anda para trás
-        for etapa in (const.ETAPA_IDENTIFICANDO, const.ETAPA_VALIDANDO):  # etapas sem página a página não inventam contagem
+        for etapa in (IDENTIFICANDO, VALIDANDO):  # etapas sem página a página não inventam contagem
             self.assertEqual({(a, t) for e, a, t in chamadas if e == etapa}, {(None, None)})
 
     def test_acompanhar_nao_muda_o_resultado(self):
@@ -107,14 +110,14 @@ class TestRegistro(unittest.TestCase):
     def test_as_etapas_do_registro_batem_com_as_do_leitor(self):
         self.assertEqual(
             ETAPAS,
-            (const.ETAPA_LENDO_PDF, const.ETAPA_IDENTIFICANDO, const.ETAPA_ANALISANDO_FASES, const.ETAPA_VALIDANDO, "FINALIZANDO"),
+            (LENDO_PDF, IDENTIFICANDO, BUSCANDO_TERMOS, VALIDANDO, "FINALIZANDO"),
         )
 
 
 class BaseComLeitorLento(BaseApi):
     fila_sincrona = False
 
-    def leitor_que_para(self, etapa="ANALISANDO_FASES", atual=3, total=10):
+    def leitor_que_para(self, etapa="BUSCANDO_TERMOS", atual=3, total=10):
         """Um leitor que informa a etapa e fica parado até liberarem; depois faz o trabalho de verdade."""
         chegou, liberar = threading.Event(), threading.Event()
 
@@ -133,11 +136,11 @@ class BaseComLeitorLento(BaseApi):
 class TestProgressoNaApi(BaseComLeitorLento):
     def test_em_analise_mostra_a_etapa_real_e_ao_concluir_some(self):
         token = self.login()
-        leitor, chegou, liberar = self.leitor_que_para("ANALISANDO_FASES", 3, 10)
+        leitor, chegou, liberar = self.leitor_que_para("BUSCANDO_TERMOS", 3, 10)
         with mock.patch(ANALISE, leitor):
             id_ = self.enviar(token, ("p.pdf", PDF_PAGO)).json()["processos"][0]["id"]
             self.assertTrue(chegou.wait(5))
-            esperado = {"etapa": "ANALISANDO_FASES", "atual": 3, "total": 10, "falhou": False}
+            esperado = {"etapa": "BUSCANDO_TERMOS", "atual": 3, "total": 10, "falhou": False}
 
             detalhe = self.get(token, f"/api/processos/{id_}").json()
             self.assertEqual((detalhe["status"], detalhe["progresso"]), ("ANALISANDO", esperado))
@@ -240,7 +243,7 @@ class TestEventosSse(BaseComLeitorLento):
 
     def test_acompanha_a_analise_e_termina_em_fim(self):
         token = self.login()
-        leitor, chegou, liberar = self.leitor_que_para("ANALISANDO_FASES", 3, 10)
+        leitor, chegou, liberar = self.leitor_que_para("BUSCANDO_TERMOS", 3, 10)
         with mock.patch(ANALISE, leitor):
             id_ = self.enviar(token, ("p.pdf", PDF_REQUISICAO)).json()["processos"][0]["id"]
             self.assertTrue(chegou.wait(5))
@@ -251,7 +254,7 @@ class TestEventosSse(BaseComLeitorLento):
         self.assertEqual(nomes[0], "estado")
         self.assertEqual(
             eventos[0][1],
-            {"status": "ANALISANDO", "progresso": {"etapa": "ANALISANDO_FASES", "atual": 3, "total": 10, "falhou": False}},
+            {"status": "ANALISANDO", "progresso": {"etapa": "BUSCANDO_TERMOS", "atual": 3, "total": 10, "falhou": False}},
         )
         self.assertEqual(nomes[-1], "fim")
         self.assertEqual(eventos[-1][1], {"status": "CONCLUIDO", "progresso": None})
@@ -291,7 +294,7 @@ class TestEventosSse(BaseComLeitorLento):
         token = self.login()
         leitor, chegou, liberar = self.leitor_que_para()
         with mock.patch(ANALISE, leitor), mock.patch.object(self.app.state.config, "sse_duracao_maxima", 0.5), \
-                mock.patch("backend.processos.rotas.SSE_PING_SEGUNDOS", 0.1):
+                mock.patch("backend.pipeline.SSE_PING_SEGUNDOS", 0.1):
             id_ = self.enviar(token, ("p.pdf", PDF_PAGO)).json()["processos"][0]["id"]
             self.assertTrue(chegou.wait(5))
             eventos = ler_eventos(self.get(token, self.url(id_)))

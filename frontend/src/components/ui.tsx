@@ -78,3 +78,16 @@ export function Chip({ children, tom = "neutral" }: { children: ReactNode; tom?:
 export function Esqueleto({ className = "" }: { className?: string }) {
   return <div aria-hidden className={`animate-pulse rounded-lg bg-surface-2 ${className}`} />;
 }
+
+/** Um dado do processo: rótulo pequeno e o valor. Use dentro de um <dl>. */
+export function Campo({ rotulo, children, className = "" }: { rotulo: string; children: ReactNode; className?: string }) {
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <dt className="text-xs font-medium uppercase tracking-wide text-muted">{rotulo}</dt>
+      <dd className="mt-0.5 text-sm [overflow-wrap:anywhere]">{children}</dd>
+    </div>
+  );
+}
+
+/** O valor, ou "Não identificado" quando a leitura não achou. */
+export const ou = (valor: string | null | undefined) => valor || <span className="text-muted">Não identificado</span>;

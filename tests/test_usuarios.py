@@ -5,10 +5,10 @@ import unittest
 from contextlib import redirect_stdout
 from unittest import mock
 
-from backend import cli
-from backend.usuarios.funcoes import criar_usuario
-from backend.usuarios.erros import ErroEmailJaCadastrado
-from backend.usuarios.schemas import UsuarioCriar
+from backend.userauths import cli
+from backend.userauths.logic import criar_usuario
+from backend.userauths.models import ErroEmailJaCadastrado
+from backend.userauths.schemas import UsuarioCriar
 from tests.apoio_backend import ADMIN, SENHA, BaseApi, configuracao
 
 
@@ -121,7 +121,7 @@ class TestCli(BaseApi):
 
     def test_criar_usuario_com_email_invalido_da_mensagem_clara(self):
         config = configuracao(self.pasta)
-        with mock.patch("backend.cli.obter_configuracoes", return_value=config), \
+        with mock.patch("backend.userauths.cli.obter_configuracoes", return_value=config), \
                 mock.patch("getpass.getpass", return_value="uma-senha-longa-1"):
             with self.assertRaises(SystemExit) as saida:
                 cli.main(["criar-usuario", "--email", "sem-arroba", "--nome", "Ana"])

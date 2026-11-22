@@ -83,7 +83,7 @@ const LinhaProcesso = memo(function LinhaProcesso({
           ) : processo.status === "FALHOU" ? (
             <p className="line-clamp-2 text-sm text-danger">{processo.erro}</p>
           ) : (
-            <ProgressoAnalise variante="compacta" status={processo.status} progresso={processo.progresso} />
+            <ProgressoAnalise status={processo.status} progresso={processo.progresso} />
           )}
         </div>
 

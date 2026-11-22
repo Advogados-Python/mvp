@@ -15,8 +15,8 @@ import pymupdf
 from fastapi.testclient import TestClient
 
 from backend.main import criar_app
-from backend.nucleo import banco
-from backend.nucleo.config import Configuracoes
+from backend import db as banco
+from backend.config import Configuracoes
 
 URL_BANCO_TESTE = os.getenv("RIBEIRO_TESTE_BANCO_URL")
 SENHA = "senha-de-teste-123"

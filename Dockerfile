@@ -30,7 +30,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
     CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/api/saude' % os.environ.get('PORT', '8000'), timeout=4)"
 
-# UM worker: a fila de análises vive na memória do processo (veja backend/processos/fila.py).
+# UM worker: a fila de análises vive na memória do processo (veja backend/pipeline.py).
 # --timeout-graceful-shutdown: abas acompanhando uma análise mantêm uma conexão SSE aberta; sem o limite, um deploy esperaria por elas.
 # Atrás de proxy (Railway), defina FORWARDED_ALLOW_IPS=* para o limite de tentativas de login enxergar o IP real.
 CMD ["sh", "-c", "exec uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --timeout-graceful-shutdown 10"]

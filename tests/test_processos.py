@@ -3,8 +3,8 @@
 import unittest
 from unittest import mock
 
-from backend.autenticacao import funcoes as autenticacao
-from backend.usuarios.modelos import Usuario
+from backend.userauths import logic as autenticacao
+from backend.userauths.models import Usuario
 from tests.apoio_backend import PDF_PAGO, PDF_PROTEGIDO, PDF_REQUISICAO, BaseApi
 
 
@@ -195,7 +195,7 @@ class TestApagarEReanalisar(BaseApi):
 
     def test_falha_inesperada_nao_vaza_detalhes_internos(self):
         token = self.login()
-        with mock.patch("backend.processos.analise.processar_pdf", side_effect=RuntimeError("caminho /etc/segredo-interno")):
+        with mock.patch("backend.pipeline.processar_pdf", side_effect=RuntimeError("caminho /etc/segredo-interno")):
             with self.assertLogs("ribeiro.analise", "ERROR"):  # o detalhe fica só no log do servidor
                 resposta = self.enviar(token, ("p.pdf", PDF_PAGO))
         resumo = resposta.json()["processos"][0]
@@ -203,8 +203,8 @@ class TestApagarEReanalisar(BaseApi):
         self.assertNotIn("segredo-interno", resposta.text)
 
     def test_apagar_durante_a_analise_nao_quebra(self):
-        from backend.leitor.funcoes import processar_pdf as original
-        from backend.processos.modelos import Processo
+        from backend.pipeline import processar_pdf as original
+        from backend.receive.models import Processo
         token = self.login()
         fabrica = self.app.state.fabrica
 
@@ -214,7 +214,7 @@ class TestApagarEReanalisar(BaseApi):
                 db.commit()
             return original(caminho, *resto)
 
-        with mock.patch("backend.processos.analise.processar_pdf", apaga_e_le):
+        with mock.patch("backend.pipeline.processar_pdf", apaga_e_le):
             self.assertEqual(self.enviar(token, ("p.pdf", PDF_PAGO)).status_code, 202)
         self.assertEqual(self.client.get("/api/processos", headers=self.cabecalho(token)).json()["total"], 0)
 

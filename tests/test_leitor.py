@@ -11,10 +11,14 @@ from pathlib import Path
 
 import pymupdf
 
-from backend.leitor import (
-    ErroPdfNaoEncontrado, Pagina, ResultadoProcesso, buscar_termos, classificar_fase,
-    exportar_csv, extrair_metadados, identificar_tribunal, ler_pdf, processar_pdf, responder_divida_paga,
-)
+from backend.extract.logic import ler_pdf
+from backend.extract.models import ErroPdfNaoEncontrado, Pagina
+from backend.finalize.logic import exportar_csv
+from backend.finalize.models import ResultadoProcesso
+from backend.identify.logic import extrair_metadados, identificar_tribunal
+from backend.pipeline import processar_pdf
+from backend.search.logic import buscar_termos
+from backend.validate.logic import classificar_fase, responder_divida_paga
 
 
 def fase_de(texto, tipo=None):

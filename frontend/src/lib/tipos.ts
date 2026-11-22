@@ -8,10 +8,10 @@ export type StatusAnalise = "PENDENTE" | "ANALISANDO" | "CONCLUIDO" | "FALHOU";
 export const emAndamento = (status: StatusAnalise) => status === "PENDENTE" || status === "ANALISANDO";
 
 /**
- * Etapas que o backend informa enquanto analisa, na ordem real de execução (backend/processos/progresso.py: ETAPAS).
+ * Etapas que o backend informa enquanto analisa, na ordem real de execução (backend/pipeline.py: ETAPAS; uma por módulo do backend).
  * A etapa "recebido" não vem da API: é o status PENDENTE (o PDF chegou e espera a vez na fila).
  */
-export const ETAPAS = ["LENDO_PDF", "IDENTIFICANDO", "ANALISANDO_FASES", "VALIDANDO", "FINALIZANDO"] as const;
+export const ETAPAS = ["LENDO_PDF", "IDENTIFICANDO", "BUSCANDO_TERMOS", "VALIDANDO", "FINALIZANDO"] as const;
 export type EtapaAnalise = (typeof ETAPAS)[number];
 
 /** Onde a análise está. `atual`/`total` (páginas) só existem nas etapas que andam página a página; nunca são estimados. */

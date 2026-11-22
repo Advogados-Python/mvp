@@ -5,7 +5,7 @@
 #   -> frontend em http://localhost:3000 · API em http://localhost:8000/docs
 #
 # Primeiro usuário: defina RIBEIRO_ADMIN_EMAIL e RIBEIRO_ADMIN_SENHA no .env (criado na primeira subida),
-# ou depois:  docker compose exec api python -m backend.cli criar-usuario --email ... --nome ... --admin
+# ou depois:  docker compose exec api python -m backend.userauths.cli criar-usuario --email ... --nome ... --admin
 
 services:
   db:

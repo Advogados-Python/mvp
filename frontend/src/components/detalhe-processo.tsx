@@ -8,16 +8,10 @@ import { ErroApi, api } from "@/lib/api";
 import { emAndamento } from "@/lib/tipos";
 import { useFases } from "@/lib/use-fases";
 import { useProcessoAoVivo } from "@/lib/use-processo-ao-vivo";
-import { AndamentoCredito } from "./andamento-credito";
 import { BotaoPdf } from "./botao-pdf";
-import { ConfiabilidadeAnalise } from "./confiabilidade-analise";
-import { InformacoesProcesso } from "./informacoes-processo";
-import { ListaEvidencias } from "./lista-evidencias";
-import { ProgressoAnalise } from "./progresso-analise";
-import { CartaoRecolhivel } from "./recolhivel";
-import { Aviso, Cartao, Chip, Esqueleto } from "./ui";
-
-const EVIDENCIAS_ABERTAS_ATE = 12; // acima disso a seção de evidências começa recolhida (o resumo no título diz quantas são)
+import { AvisosDaAnalise, ResultadoEmDestaque } from "./corpos-das-fases";
+import { FasesDoProcesso } from "./fases-do-processo";
+import { Aviso, Chip, Esqueleto } from "./ui";
 
 const ESTILO_BOTAO =
   "inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium hover:border-accent disabled:opacity-40";
@@ -136,55 +130,20 @@ export function DetalheProcesso({ id }: { id: string }) {
     </Aviso>
   );
 
-  // ---- análise ainda não terminou
-  if (andamento) {
-    const vivo = estado ?? { status: processo.status, progresso: processo.progresso };
-    return (
-      <div className={MOLDURA}>
-        {cabecalho}
-        {alertaDeErro}
-        <Cartao titulo="Análise em andamento" descricao="O resultado aparece aqui assim que o servidor terminar.">
-          <ProgressoAnalise status={vivo.status} progresso={vivo.progresso} conexao={conexao} />
-        </Cartao>
-      </div>
-    );
-  }
-
-  // ---- a análise falhou
-  if (processo.status === "FALHOU") {
-    return (
-      <div className={MOLDURA}>
-        {cabecalho}
-        {alertaDeErro}
-        <Aviso tom="danger" titulo="A análise deste PDF falhou">
-          {processo.erro ?? "Erro desconhecido."} Confira o arquivo e tente de novo, ou apague e envie outro PDF.
-        </Aviso>
-        {processo.progresso?.falhou && (
-          <Cartao titulo="Onde a análise parou">
-            <ProgressoAnalise status="FALHOU" progresso={processo.progresso} />
-          </Cartao>
-        )}
-      </div>
-    );
-  }
-
-  // ---- análise concluída: do que identifica o processo, ao andamento do crédito (o centro da página), à confiabilidade e às provas
+  // O processo, fase a fase, em qualquer estado: na fila, analisando (com o andamento real de cada fase), concluído ou falho.
+  // Quando concluído, a resposta vem em destaque no topo e os avisos ficam sempre à vista (nunca dentro de uma fase recolhida).
   return (
     <div className={MOLDURA}>
       {cabecalho}
       {alertaDeErro}
-      <InformacoesProcesso processo={processo} />
-      <AndamentoCredito processo={processo} fases={fases} />
-      <ConfiabilidadeAnalise processo={processo} />
-      <CartaoRecolhivel
-        compacto
-        titulo="Todas as evidências"
-        descricao="Cada achado do dicionário de termos, com a página e o trecho de onde veio."
-        resumo={`${processo.total_evidencias} ${processo.total_evidencias === 1 ? "achado" : "achados"} · ${processo.evidencias_que_contam} decidem a fase`}
-        abertoInicialmente={processo.evidencias.length <= EVIDENCIAS_ABERTAS_ATE}
-      >
-        <ListaEvidencias evidencias={processo.evidencias} idProcesso={processo.id} fases={fases} />
-      </CartaoRecolhivel>
+      {processo.status === "FALHOU" && (
+        <Aviso tom="danger" titulo="A análise deste PDF falhou">
+          {processo.erro ?? "Erro desconhecido."} Confira o arquivo e tente de novo, ou apague e envie outro PDF.
+        </Aviso>
+      )}
+      {concluido && <ResultadoEmDestaque processo={processo} fases={fases} />}
+      {concluido && <AvisosDaAnalise processo={processo} />}
+      <FasesDoProcesso processo={processo} fases={fases} estado={estado} conexao={conexao} />
     </div>
   );
 }

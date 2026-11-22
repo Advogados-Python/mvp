@@ -31,5 +31,5 @@ npm run build
 - **Análise em segundo plano:** a lista e o detalhe buscam de novo a cada 2 s enquanto houver processo `PENDENTE` ou `ANALISANDO`, e param sozinhos.
 - **Cache Components está ligado** (padrão do Next 16.4). Na rota dinâmica, o `params` é lido dentro de um `<Suspense>`, como a documentação exige; `useSearchParams` (login) também.
 - **A cor nunca é o único sinal**: cada resposta de `divida_paga` e cada status tem ícone e texto. "Ainda não paga" usa o tom azul de propósito, porque é a situação normal de um crédito em aberto, não um erro.
-- Os rótulos e a ordem das fases vêm de `GET /api/fases`: um termo ou fase novo em `backend/leitor/constantes.py` aparece aqui sem mexer no frontend.
+- Os rótulos e a ordem das fases vêm de `GET /api/fases`: uma fase nova em `backend/validate/ladder.py` aparece aqui sem mexer no frontend.
 - `output: "standalone"` gera a imagem Docker enxuta ([`Dockerfile`](Dockerfile)). `NEXT_PUBLIC_API_URL` é um argumento de **build**.

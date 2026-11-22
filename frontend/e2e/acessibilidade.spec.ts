@@ -22,7 +22,7 @@ async function auditar(page: Page, onde: string) {
 const LISTA = [
   resumoFalso({ id: "1".padStart(32, "0"), avisos: ["Número do processo (CNJ) não encontrado."] }),
   resumoFalso({ id: "2".padStart(32, "0"), numero_processo: "7654321-10.2024.4.01.3500", fase: "QUITADO", divida_paga: "SIM" }),
-  { ...processoEmAndamentoFalso("ANALISANDO", progresso("ANALISANDO_FASES", 120, 300)), id: "3".padStart(32, "0"), arquivo: "autos.pdf" },
+  { ...processoEmAndamentoFalso("ANALISANDO", progresso("BUSCANDO_TERMOS", 120, 300)), id: "3".padStart(32, "0"), arquivo: "autos.pdf" },
   { ...processoEmAndamentoFalso("PENDENTE"), id: "4".padStart(32, "0"), arquivo: "fila.pdf" },
   { ...processoEmAndamentoFalso("FALHOU", progresso("LENDO_PDF", null, null, true)), id: "5".padStart(32, "0"), arquivo: "quebrado.pdf" },
   resumoFalso({ id: "6".padStart(32, "0"), numero_processo: "1111111-22.2023.8.26.0053", fase: "PAGAMENTO_DISPONIBILIZADO", divida_paga: "PROVAVEL" }),
@@ -81,11 +81,12 @@ for (const tela of [{ nome: "desktop", largura: 1440, altura: 900 }, { nome: "ce
       await simularApi(page, { detalhe: detalheFalso({ id: ID, paginas_sem_texto: 80, total_paginas: 120, avisos: ["Aviso de exemplo."] }, 40) });
       await page.goto(`/processos/${ID}`);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-      await auditar(page, "detalhe (seções recolhidas)");
-      await page.getByRole("button", { name: /^Mais informações/ }).click();
-      await page.getByRole("button", { name: /^Todas as evidências/ }).click();
+      await auditar(page, "detalhe (fases recolhidas e abertas por padrão)");
+      for (const nome of [/^1\. Documento recebido/, /^2\. Extraindo conteúdo/, /^4\. Buscando os termos/, /^6\. Finalizando resultado/]) {
+        await page.getByRole("button", { name: nome }).click();
+      }
       await page.waitForTimeout(450);
-      await auditar(page, "detalhe (informações complementares e evidências abertas)");
+      await auditar(page, "detalhe (todas as fases abertas)");
     });
 
     test("detalhe em andamento, na fila e com falha", async ({ page }) => {
@@ -149,37 +150,35 @@ test.describe("teclado, leitores de tela e estrutura", () => {
     expect(await link.getAttribute("href")).toBe(`/processos/${"1".padStart(32, "0")}`);
   });
 
-  test("seções recolhíveis: botão com aria-expanded, Enter/Espaço alternam e o recolhido sai do foco", async ({ page }) => {
+  test("fases recolhíveis: botão com aria-expanded, Enter/Espaço alternam e o recolhido sai do foco", async ({ page }) => {
     await simularApi(page, { detalhe: detalheFalso({ id: ID }, 5) });
     await page.goto(`/processos/${ID}`);
-    const escada = page.getByRole("button", { name: /^Mais informações/ });
-    await expect(escada).toHaveAttribute("aria-expanded", "false");
-    const regiao = page.locator(`#${await escada.getAttribute("aria-controls")}`.replace(/:/g, "\\:"));
-    await expect(regiao).toHaveAttribute("inert", ""); // recolhido: fora do foco e da árvore de acessibilidade
-    await escada.focus();
-    await page.keyboard.press("Enter");
-    await expect(escada).toHaveAttribute("aria-expanded", "true");
+    const identificacao = page.getByRole("button", { name: /^3\. Identificando o processo/ });
+    await expect(identificacao).toHaveAttribute("aria-expanded", "true"); // a identificação começa aberta
+    const regiao = page.locator(`#${await identificacao.getAttribute("aria-controls")}`.replace(/:/g, "\\:"));
     await expect(regiao).not.toHaveAttribute("inert", "");
+    await identificacao.focus();
+    await page.keyboard.press("Enter");
+    await expect(identificacao).toHaveAttribute("aria-expanded", "false");
+    await expect(regiao).toHaveAttribute("inert", ""); // recolhido: fora do foco e da árvore de acessibilidade
     await page.keyboard.press("Space");
-    await expect(escada).toHaveAttribute("aria-expanded", "false");
-    await expect(regiao).toHaveAttribute("inert", "");
-    // o botão aponta para a região que controla
-    await expect(regiao).toHaveCount(1);
+    await expect(identificacao).toHaveAttribute("aria-expanded", "true");
+    await expect(regiao).not.toHaveAttribute("inert", "");
   });
 
-  test("andamento: grupo e lista nomeados, etapa atual com aria-current, barras com nome, e só a mensagem é 'viva'", async ({ page }) => {
-    await simularApi(page, { detalhe: processoEmAndamentoFalso("ANALISANDO", progresso("ANALISANDO_FASES", 120, 300)) });
+  test("andamento: lista nomeada, fase atual com aria-current, barras com nome, e só a mudança de fase é 'viva'", async ({ page }) => {
+    await simularApi(page, { detalhe: processoEmAndamentoFalso("ANALISANDO", progresso("BUSCANDO_TERMOS", 120, 300)) });
     await page.goto(`/processos/${ID}`);
-    const grupo = page.getByRole("group", { name: "Andamento da análise" });
-    await expect(grupo.getByRole("listitem")).toHaveCount(6);
-    await expect(grupo.locator('[aria-current="step"]')).toHaveCount(1);
-    // cada etapa diz seu estado por texto (não só por cor/ícone)
-    const textos = await grupo.getByRole("listitem").evaluateAll((els) => els.map((el) => /\((concluída|em andamento|aguardando|falhou aqui)\)/.test(el.textContent ?? "") || /(concluída|em andamento|aguardando|falhou aqui)/.test(el.textContent ?? "")));
+    const lista = page.getByRole("list", { name: "Fases do processo" });
+    await expect(lista.getByRole("listitem")).toHaveCount(6);
+    await expect(lista.locator('[aria-current="step"]')).toHaveCount(1);
+    // cada fase diz seu estado por texto (não só por cor/ícone)
+    const textos = await lista.getByRole("listitem").evaluateAll((els) => els.map((el) => /(concluída|em andamento|aguardando|falhou aqui)/.test(el.textContent ?? "")));
     expect(textos.every(Boolean)).toBe(true);
     await expect(page.getByRole("progressbar", { name: "Páginas analisadas" })).toHaveAttribute("aria-valuetext", "120 de 300 páginas analisadas");
-    // regiões vivas: exatamente a da mensagem da etapa (a contagem de páginas não é anunciada a cada atualização)
-    const vivas = await page.locator('[role="status"], [aria-live]').evaluateAll((els) => els.map((el) => el.textContent?.slice(0, 40)).filter((t) => t && t.includes("Analisando as fases")));
-    expect(vivas.length).toBe(1);
+    // regiões vivas: exatamente a que anuncia a fase atual (a contagem de páginas não é anunciada a cada atualização)
+    const vivas = page.locator('[role="status"]').filter({ hasText: "Fase 4 de 6: Buscando os termos" });
+    await expect(vivas).toHaveCount(1);
     expect(await page.locator('[role="status"]:has([role="progressbar"])').count()).toBe(0);
   });
 

@@ -71,10 +71,14 @@ test("envia um PDF, a análise termina e a página do processo abre sozinha, com
   await expect(page).toHaveURL(/\/processos\/[0-9a-f]{32}$/, { timeout: 20_000 }); // sem clicar em nada
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("1234567-89.2025.4.01.3500");
   await expect(page.getByText("A dívida já foi paga?")).toBeVisible();
-  await expect(page.getByText("Fase atual do crédito")).toBeVisible();
   await expect(page.getByText("Ação recomendada")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Andamento do crédito" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Confiabilidade da análise" })).toBeVisible();
+  // o processo, fase a fase: as seis fases de leitura, todas concluídas, cada uma com o que produziu
+  const fases = page.getByRole("list", { name: "Fases do processo" });
+  await expect(fases.locator(":scope > li")).toHaveCount(6); // as seis fases (a escada do crédito, dentro da validação, tem os seus próprios itens)
+  for (const nome of ["Documento recebido", "Extraindo conteúdo", "Identificando o processo", "Buscando os termos", "Validando evidências", "Finalizando resultado"]) {
+    await expect(fases.getByRole("listitem").filter({ hasText: nome })).toContainText("concluída");
+  }
+  await expect(fases.getByRole("listitem").filter({ hasText: "Identificando o processo" })).toContainText("1234567-89.2025.4.01.3500 · TRF1");
 
   // a evidência principal aponta para a página 2 do PDF, via link assinado
   const conferir = page.getByRole("button", { name: /Conferir na pág\. 2/ });
@@ -85,7 +89,7 @@ test("envia um PDF, a análise termina e a página do processo abre sozinha, com
   await popup.close();
 
   // a lista de evidências continua com o link para a página de cada achado
-  await expect(page.getByRole("button", { name: "Todas as evidências", expanded: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /4\. Buscando os termos/, expanded: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /pág\. 2 .*abre o PDF/ }).first()).toBeVisible();
 });
 
@@ -133,7 +137,7 @@ test("o progresso do ENVIO é real e separado do da análise", async ({ page }) 
     })
     .toBe(true); // passou por um percentual intermediário medido pelo navegador
   // enquanto só o envio acontece, não existe acompanhamento de análise na tela
-  await expect(page.getByRole("group", { name: "Andamento da análise" })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Fases do processo" })).toHaveCount(0);
 
   await expect(page).toHaveURL(/\/processos\/[0-9a-f]{32}$/, { timeout: 40_000 }); // enviou, analisou e abriu o processo
   await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
@@ -150,7 +154,7 @@ test("falha na análise: erro no histórico, no detalhe e a etapa onde parou; re
   await linha.getByRole("link").click();
 
   await expect(page.getByRole("alert").filter({ hasText: "A análise deste PDF falhou" })).toBeVisible();
-  await expect(page.getByText("A análise parou em “Extraindo conteúdo”.")).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "Extraindo conteúdo" })).toContainText("A análise parou aqui");
   await expect(page.getByRole("listitem").filter({ hasText: "Extraindo conteúdo" })).toContainText("falhou aqui");
 
   const reanalise = page.waitForResponse((r) => r.url().endsWith("/reanalisar") && r.status() === 202);
@@ -199,7 +203,7 @@ test.describe("acompanhamento ao vivo (SSE real)", () => {
     await page.goto(`/processos/${id}`);
     await abriuFluxo;
 
-    const grupo = page.getByRole("group", { name: "Andamento da análise" });
+    const grupo = page.getByRole("list", { name: "Fases do processo" });
     await expect(grupo).toBeVisible();
     await expect(page.getByText("Acompanhando ao vivo")).toBeVisible();
     await expect(grupo.locator('[aria-current="step"]')).toHaveCount(1);
@@ -212,13 +216,13 @@ test.describe("acompanhamento ao vivo (SSE real)", () => {
 
     // etapas anteriores à ativa aparecem como concluídas (o pipeline é sequencial)
     const ativa = grupo.locator('[aria-current="step"]');
-    const rotulo = (await ativa.innerText()).split("\n")[0];
-    if (rotulo.startsWith("Analisando as fases")) {
+    if (/Buscando os termos/.test(await ativa.innerText())) {
       await expect(grupo.getByRole("listitem").filter({ hasText: "Extraindo conteúdo" })).toContainText("concluída");
     }
 
     await expect(page.getByText("A dívida já foi paga?")).toBeVisible({ timeout: 60_000 }); // sem recarregar
-    await expect(grupo).toHaveCount(0);
+    await expect(grupo.locator(':scope > li[aria-current="step"]')).toHaveCount(0); // nenhuma fase de leitura em andamento: o processo ficou completo na tela
+    await expect(grupo.getByRole("listitem").filter({ hasText: "Finalizando resultado" })).toContainText("concluída");
   });
 
   test("ao recarregar no meio da análise o estado real continua na tela", async ({ page, request }) => {
@@ -226,7 +230,7 @@ test.describe("acompanhamento ao vivo (SSE real)", () => {
     await page.goto(`/processos/${id}`);
     await expect(page.getByRole("progressbar", { name: /Páginas/ })).toBeVisible();
     await page.reload();
-    await expect(page.getByRole("group", { name: "Andamento da análise" })).toBeVisible();
+    await expect(page.getByRole("list", { name: "Fases do processo" })).toBeVisible();
     await expect(page.getByRole("progressbar", { name: /Páginas/ })).toBeVisible(); // continua no meio, não volta ao início
     const parcial = Number(await page.getByRole("progressbar", { name: /Páginas/ }).getAttribute("aria-valuenow"));
     expect(parcial).toBeGreaterThan(0);
@@ -276,7 +280,7 @@ test.describe("acompanhamento ao vivo (SSE real)", () => {
     await page.goto("/");
     await page.evaluate(() => ((window as unknown as { marca: number }).marca = 42)); // sumiria se a página recarregasse
     const linha = linhaDo(page, "pesado.pdf");
-    await expect(linha).toContainText(/Extraindo conteúdo|Analisando as fases|Na fila/);
+    await expect(linha).toContainText(/Extraindo conteúdo|Buscando os termos|Na fila/);
     await expect(page.getByText(/1 análise em andamento/)).toBeVisible();
     await esperarStatus(request, token, id, "CONCLUIDO", 60_000);
     await expect(linha).toContainText(/Sem informação|Ainda não paga|Paga/, { timeout: 15_000 });
@@ -295,12 +299,12 @@ test.describe("a página do processo abre sozinha quando a análise iniciada ter
     await page.getByRole("button", { name: "Analisar PDF" }).click();
 
     await expect(page.getByText(/a página do processo abre sozinha/)).toBeVisible();
-    await expect(linhaDo(page, "pesado.pdf")).toContainText(/Na fila|Extraindo conteúdo|Analisando as fases/); // ainda analisando
+    await expect(linhaDo(page, "pesado.pdf")).toContainText(/Na fila|Extraindo conteúdo|Buscando os termos/); // ainda analisando
     expect(new URL(page.url()).pathname, "enquanto analisa, não sai da tela inicial").toBe("/");
 
     await page.waitForURL(abriuProcesso, { timeout: 60_000 });
     await expect(page.getByText("A dívida já foi paga?")).toBeVisible(); // o resultado já está lá
-    await expect(page.getByRole("heading", { name: "Andamento do crédito" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /5\. Validando evidências/ })).toBeVisible();
     await page.getByRole("link", { name: "Voltar ao histórico" }).click();
     await expect(linhaDo(page, "pesado.pdf")).toContainText(/Sem informação|Ainda não paga|Paga/); // e o histórico guardou o processo
   });
@@ -311,7 +315,7 @@ test.describe("a página do processo abre sozinha quando a análise iniciada ter
     await page.getByRole("button", { name: "Analisar PDF" }).click();
     await page.waitForURL(abriuProcesso, { timeout: 30_000 });
     await expect(page.getByRole("alert").filter({ hasText: "A análise deste PDF falhou" })).toBeVisible();
-    await expect(page.getByText("A análise parou em “Extraindo conteúdo”.")).toBeVisible();
+    await expect(page.getByRole("listitem").filter({ hasText: "Extraindo conteúdo" })).toContainText("A análise parou aqui");
   });
 
   test("com vários PDFs no mesmo envio não há uma única página para abrir: fica no histórico", async ({ page }) => {
@@ -333,7 +337,7 @@ test.describe("a página do processo abre sozinha quando a análise iniciada ter
     await page.goto("/");
     await entrada(page).setInputFiles(pdf("pesado.pdf", pdfPesado(500)));
     await page.getByRole("button", { name: "Analisar PDF" }).click();
-    await expect(linhaDo(page, "pesado.pdf")).toContainText(/Na fila|Extraindo conteúdo|Analisando as fases/);
+    await expect(linhaDo(page, "pesado.pdf")).toContainText(/Na fila|Extraindo conteúdo|Buscando os termos/);
 
     // navegação de dentro do app (sem recarregar): vai olhar outro processo enquanto o enviado analisa
     await linhaDo(page, "1234567-89.2025.4.01.3500").getByRole("link").click();

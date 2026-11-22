@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from backend.main import criar_app
-from backend.nucleo.config import Configuracoes
+from backend.config import Configuracoes
 from tests.apoio_backend import ADMIN, BaseApi, configuracao
 
 

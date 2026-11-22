@@ -1,5 +1,5 @@
 # Para rodar de DENTRO da pasta backend/ (1ª vez):   pip install -r requirements.txt
 # Instala as dependências (as mesmas do requirements.txt da raiz) e o pacote `backend` em modo editável,
-# o que permite usar `uvicorn backend.main:app` e `python -m backend.cli` a partir desta pasta.
+# o que permite usar `uvicorn backend.main:app` e `python -m backend.userauths.cli` a partir desta pasta.
 -r ../requirements.txt
 -e ..

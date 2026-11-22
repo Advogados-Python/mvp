@@ -5,9 +5,8 @@ import unittest
 
 import jwt
 
-from backend.autenticacao import funcoes
-from backend.autenticacao.classes import LimitadorLogin
-from backend.usuarios.modelos import Usuario
+from backend.userauths import logic as funcoes
+from backend.userauths.models import LimitadorLogin, Usuario
 from tests.apoio_backend import ADMIN, SENHA, BaseApi
 
 
