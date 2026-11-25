@@ -30,6 +30,8 @@ services:
       RIBEIRO_ADMIN_EMAIL: ${RIBEIRO_ADMIN_EMAIL:-}
       RIBEIRO_ADMIN_SENHA: ${RIBEIRO_ADMIN_SENHA:-}
       RIBEIRO_CORS_ORIGINS: ${RIBEIRO_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}   # camada de IA (opcional): sem chave, só POST /api/ia/analise responde 503
+      RIBEIRO_IA_MODELO: ${RIBEIRO_IA_MODELO:-gpt-5-nano}
     volumes:
       - dados:/data
     ports:

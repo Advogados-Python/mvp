@@ -9,3 +9,7 @@ psycopg[binary]>=3.1         # driver do Postgres (em produção); o SQLite já 
 pwdlib[argon2]>=0.2          # hash de senhas (Argon2)
 pyjwt>=2.8
 pydantic-settings>=2.2
+
+# Camada de IA (backend/ai_services). Só são importadas quando a rota POST /api/ia/analise é usada; sem elas (ou sem a chave) só essa rota responde 503.
+langgraph>=1.0
+langchain-openai>=1.0        # traz o langchain-core

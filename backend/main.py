@@ -13,6 +13,7 @@ suas classes (models.py), a sua lógica (logic.py) e a sua API (schemas.py + api
     search/      4  Buscando os termos        o dicionário: cada achado, com página e trecho   GET  /api/processos/{id}/search
     validate/    5  Validando evidências      a fase do crédito, "dívida paga?" e os avisos    GET  /api/fases e .../validate
     finalize/    6  Finalizando resultado     grava o resultado; a lista e o detalhe           GET  /api/processos e .../{id}
+    ai_services/ 7  Camada de IA (opcional)   o modelo confere a fase lendo o texto sem o cabeçalho POST /api/ia/analise
     userauths/   usuários e login (e a CLI: python -m backend.userauths.cli)
 
     main.py      este arquivo: monta o app          config.py   o ambiente (variáveis RIBEIRO_*)       db.py   o banco
@@ -29,6 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from . import db, pipeline
+from .ai_services import api as ai_services_api
 from .config import Configuracoes, obter_configuracoes
 from .db import Sessao
 from .extract import api as extract_api
@@ -86,7 +88,7 @@ def criar_app(config: Optional[Configuracoes] = None) -> FastAPI:
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
-    # As seis fases de leitura, na ordem, mais a esteira (andamento ao vivo) e os usuários.
+    # As seis fases de leitura, na ordem, mais a camada de IA, a esteira (andamento ao vivo) e os usuários.
     for roteador in (
         receive_api.router,
         extract_api.router,
@@ -94,6 +96,7 @@ def criar_app(config: Optional[Configuracoes] = None) -> FastAPI:
         search_api.router,
         validate_api.router,
         finalize_api.router,
+        ai_services_api.router,
         pipeline.router,
         userauths_api.auth_router,
         userauths_api.users_router,

@@ -6,7 +6,7 @@ Lê PDFs de processos judiciais e responde, com **evidência (página + trecho)*
 - Em que fase está o crédito contra o Estado — sentença, trânsito em julgado, requisição (RPV/OPV/precatório), pagamento?
 - **A dívida já foi paga/liquidada?** (`SIM` / `PROVAVEL` / `NAO` / `SEM_INFORMACAO`)
 
-O MVP usa só **regex + dicionário de termos** (sem IA generativa). Cada decisão é rastreável até uma página do PDF.
+As seis fases de leitura usam só **regex + dicionário de termos** (sem IA generativa). Cada decisão é rastreável até uma página do PDF. Uma **camada de IA opcional** (`backend/ai_services`, veja a seção 2) dá uma segunda opinião lendo o texto sem o cabeçalho; ela não substitui as regras.
 
 ---
 
@@ -138,6 +138,7 @@ Todas as variáveis de ambiente estão documentadas em [`.env.example`](.env.exa
 | `GET/POST /api/usuarios` · `PATCH /api/usuarios/{id}` | **Administrador:** listar, criar, desativar, redefinir a senha |
 | `POST /api/processos` | Envia 1+ PDFs (multipart, campo `arquivos`). Responde **na hora** (202); a análise segue em segundo plano. Arquivo vazio, grande demais ou que não é PDF volta em `falhas`, sem derrubar o lote |
 | `GET /api/processos` | Lista os **seus** processos, com `status` (`PENDENTE`, `ANALISANDO`, `CONCLUIDO`, `FALHOU`) |
+| `POST /api/ia/analise` | **Camada de IA (opcional):** recebe o resultado das fases e o texto sem o cabeçalho e devolve o parecer do modelo. Veja a seção 2. Sem `OPENAI_API_KEY`, responde 503 e o resto da API segue normal |
 | `GET /api/processos/{id}` | Resultado completo, com todas as evidências. Em `ANALISANDO` traz `progresso` (a etapa atual); em `FALHOU`, a etapa onde parou |
 | `GET /api/processos/{id}/eventos` | Acompanha a análise **ao vivo** (Server-Sent Events, mesmo login por cabeçalho). Só traz status e etapa; ao terminar (`fim`) o resultado vem do `GET` acima |
 | `POST /api/processos/{id}/reanalisar` | Refaz a análise (útil depois de ensinar termos novos ao dicionário) |
@@ -207,6 +208,7 @@ ribeiro_e_souza/
 │   ├── search/              # ⭐ 4 Buscando os termos: o dicionário, cada achado com página e trecho
 │   ├── validate/            # ⭐ 5 Validando evidências: a fase do crédito, "dívida paga?" e os avisos
 │   ├── finalize/            # ⭐ 6 Finalizando resultado: grava o resultado; a lista e o detalhe do processo
+│   ├── ai_services/         # 7 Camada de IA (opcional): o modelo confere a fase lendo o texto SEM o cabeçalho (sanitize · prompt · graph · logic · api)
 │   │     └── (em cada fase)  models.py (as CLASSES) · logic.py (a lógica) · schemas.py + api.py (a API) · e um arquivo de regras
 │   │                         (receive/store.py, identify/rules.py, search/terms.py, validate/ladder.py)
 │   └── userauths/           # usuários e login: models, schemas, logic (Argon2, JWT, link assinado do PDF), deps, api e cli.py
@@ -244,6 +246,54 @@ PDF enviado ─► 1 receive ─► 2 extract ─► 3 identify ─► 4 search 
 - **Fase 5, `classificar_fase`:** sobe a "escada" do crédito (`validate/ladder.py`); vale a **mais alta com evidência confiável**.
 
 `pipeline.py` compõe as fases 2 a 5 em `processar_pdf` (devolve o `ResultadoProcesso`), roda o job em segundo plano (`analisar_processo`, que chama a fase 6 para gravar) e informa a etapa de cada análise. A ordem dos códigos de andamento (`LENDO_PDF`, `IDENTIFICANDO`, `BUSCANDO_TERMOS`, `VALIDANDO`, `FINALIZANDO`) vem das próprias fases (`STAGE` em cada `models.py`): é a mesma que a API de andamento informa à tela. Cada fase tem a sua rota por processo, `GET /api/processos/{id}/<fase>`.
+
+### A camada de IA (opcional): `backend/ai_services`
+
+Depois das seis fases, uma sétima camada pede a um modelo de linguagem (OpenAI; `gpt-5-nano` por padrão) uma **segunda opinião** sobre a fase do crédito, lendo o **texto inteiro dos autos, sem o cabeçalho**. Ela não substitui as regras: devolve um parecer ao lado delas, e o advogado vê se concordam. **Nada é gravado** e **nada roda sozinho** na esteira: é uma rota que quem chama aciona. O código parte do `ai-agent-sales` (grafo LangGraph, `ChatOpenAI` com saída estruturada, prompts num módulo à parte), sem as ferramentas de CRM nem o RAG.
+
+`POST /api/ia/analise` (exige login). O corpo é o resultado das fases mais o texto, página a página:
+
+```json
+{
+  "processo": {"tribunal": "TRF1", "total_paginas": 306, "fase": "REQUISICAO", "avisos": [],
+               "evidencias": [{"fase": "REQUISICAO", "termo": "oficio_requisitorio", "pagina": 120, "trecho": "...", "hipotetico": false, "origem_confiavel": true}]},
+  "paginas": [{"numero": 3, "texto": "..."}, {"numero": 4, "texto": "..."}]
+}
+```
+
+`numero` é a página no PDF **original** (a capa removida não renumera as outras): é por ele que a IA cita a evidência. A resposta traz `fase_sugerida`, `divida_paga_sugerida` (sai da fase, pela mesma escada do restante), `concorda_com_regras`, `confianca`, `resumo`, `justificativa`, `pontos_de_atencao` e `evidencias` (`pagina`, `trecho`, `observacao`, `verificada`). **`verificada`** diz se o trecho citado foi achado, letra por letra, nessa página: a IA não consegue "inventar" uma citação sem que isso apareça, e sem nenhum trecho conferido a confiança cai para `baixa`.
+
+**O que sai do servidor rumo ao modelo** (`ai_services/sanitize.py`, aplicado pela própria API a todo pedido):
+
+| O quê | Tratamento |
+|---|---|
+| Capa dos autos do PJe (número, classe, partes, advogados, índice de documentos) | **Removida** pela API, mesmo que o chamador não a tenha tirado (tirar de novo não muda nada). Se a capa não puder ser separada do resto, a API recusa (422) em vez de arriscar |
+| CPF, CNPJ, e-mail, telefone com DDD e número do processo | **Mascarados** no texto, nos trechos e nos avisos (`[CPF]`, `[Nº DO PROCESSO]`...) |
+| Número, nome do arquivo, partes, advogados, OABs, juiz, classe, órgão e valores do `processo` | **Aceitos e descartados**: dá para enviar o `ResultadoProcesso.para_dict()` inteiro, mas só `tribunal`, contagens, `fase`, `avisos` e `evidencias` chegam ao modelo |
+| Evidências de páginas que não seguem (as da capa) | **Descartadas** |
+| **Nomes dentro das peças** (partes, advogados, juiz, quem assina) | **Seguem.** Nos PDFs de exemplo, todos os nomes da capa ainda aparecem no corpo dos autos depois de tirá-la. A garantia é "sem capa e sem documentos/contatos", não "texto anônimo" |
+
+Para chamar a partir do código que já existe (o texto das páginas não é guardado no banco: leia o PDF de novo):
+
+```python
+from backend.extract.logic import extrair_conteudo
+from backend.pipeline import processar_pdf
+
+resultado = processar_pdf(caminho)                  # as fases 2 a 5
+paginas = extrair_conteudo(caminho).paginas         # o texto, página a página
+corpo = {"processo": resultado.para_dict(),
+         "paginas": [{"numero": p.numero, "texto": p.texto} for p in paginas]}
+```
+
+| Variável | Padrão | O que faz |
+|---|---|---|
+| `OPENAI_API_KEY` (ou `RIBEIRO_OPENAI_API_KEY`) | — | A chave. Sem ela, só esta rota responde 503 |
+| `RIBEIRO_IA_MODELO` | `gpt-5-nano` | O modelo |
+| `RIBEIRO_IA_ESFORCO` | `low` | Esforço de raciocínio (`minimal`/`low`/`medium`/`high`); só vale para modelos `gpt-5` e `o*` |
+| `RIBEIRO_IA_TIMEOUT_SEGUNDOS` | `180` | Tempo máximo da chamada ao modelo |
+| `RIBEIRO_IA_MAX_CARACTERES` | `1000000` | Teto do texto enviado (~285 mil tokens); acima disso a rota responde 413. Os PDFs de exemplo (72 a 306 páginas) ficam entre 31 mil e 242 mil caracteres |
+
+Erros do modelo viram 502 com mensagem genérica, e o log guarda só o tipo da exceção (nunca texto dos autos nem a chave). `langgraph` e `langchain-openai` só são importados na primeira chamada à rota.
 
 ### Modelagem de dados
 
@@ -347,10 +397,12 @@ Foram testados 3 autos reais: 1 do TJSP (e-SAJ, 72 págs.) e 2 de JEF Cível do 
 3. Consulta por número do processo: avaliar a API pública do **DataJud (CNJ)** em vez de raspar sites de tribunais (verifique termos de uso e limites antes de automatizar consultas em massa).
 4. Entrada opcional de Diário da Justiça (DJe/DJEN): obter um PDF real e calibrar os regex.
 5. **Migrações de banco (Alembic)** antes da primeira mudança de colunas de uma tabela existente (e para remover a coluna antiga `processos.resultado`); **HTTPS** na frente da API; rotina de **expiração dos PDFs** enviados (LGPD); e, se o escritório quiser compartilhar processos entre usuários, um modelo de equipes (hoje cada processo é só de quem o enviou).
-6. Só então considerar um LLM para estruturar campos ambíguos — mantendo regex como primeira camada e a evidência (página/trecho) como saída obrigatória.
+6. O LLM entrou como camada opcional final (`ai_services`), mantendo o regex como primeira camada e a evidência (página/trecho, conferida) como saída obrigatória. Falta decidir se ele roda sozinho na esteira (hoje é uma rota), medir a concordância com as regras em PDFs de processos já pagos e, se o escritório não aceitar que nomes das partes saiam do servidor, mascarar também os nomes que a fase 3 já extraiu.
 
 ## 7. Dados pessoais (LGPD)
 
 Autos contêm CPF, RG, endereço e, às vezes, dados de saúde. Por isso `input/`, `output/`, `data/` e `.env` estão no `.gitignore`: **nunca versione PDFs, resultados, bancos ou segredos**. Os testes usam apenas dados fictícios.
+
+**A camada de IA envia texto dos autos para a OpenAI** (só se `OPENAI_API_KEY` estiver definida). Ela retira a capa e mascara CPF, CNPJ, e-mail, telefone e número do processo, mas **os nomes que aparecem no corpo das peças seguem junto** (veja a seção 2). Avalie a base legal e o contrato de tratamento de dados com o provedor antes de ligá-la com processos reais.
 
 Na API, cada processo só é visível para quem o enviou, os PDFs ficam em disco com permissão `0600` e as respostas do PDF saem com `Cache-Control: private, no-store`. O usuário pode apagar o PDF e o resultado a qualquer momento. Lembre que o token de login fica no `localStorage` do navegador: use a API sempre por HTTPS fora da sua máquina.

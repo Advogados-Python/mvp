@@ -15,9 +15,9 @@ EXTRAS = {"receive": {"store.py"}, "identify": {"rules.py"}, "search": {"terms.p
 
 
 class TestEstrutura(unittest.TestCase):
-    def test_o_backend_so_tem_as_seis_fases_e_userauths(self):
+    def test_o_backend_so_tem_as_seis_fases_a_camada_de_ia_e_userauths(self):
         pastas = {p.name for p in RAIZ.iterdir() if p.is_dir() and p.name != "__pycache__"}
-        self.assertEqual(pastas, {*FASES, "userauths"})
+        self.assertEqual(pastas, {*FASES, "ai_services", "userauths"})
         self.assertEqual({p.name for p in RAIZ.iterdir() if p.is_file()}, {"__init__.py", "main.py", "config.py", "db.py", "pipeline.py", "requirements.txt"})
 
     def test_cada_fase_tem_as_suas_classes_a_sua_logica_e_a_sua_api(self):
@@ -25,6 +25,11 @@ class TestEstrutura(unittest.TestCase):
             arquivos = {p.name for p in (RAIZ / fase).iterdir() if p.suffix == ".py"}
             self.assertEqual(arquivos, ARQUIVOS_PADRAO | EXTRAS.get(fase, set()), fase)
         self.assertEqual({p.name for p in (RAIZ / "userauths").iterdir() if p.suffix == ".py"}, {"__init__.py", "models.py", "schemas.py", "logic.py", "deps.py", "api.py", "cli.py"})
+        # A camada de IA não guarda nada (sem models.py); o resto segue o mesmo molde: schemas + logic + api.
+        self.assertEqual(
+            {p.name for p in (RAIZ / "ai_services").iterdir() if p.suffix == ".py"},
+            {"__init__.py", "schemas.py", "logic.py", "api.py", "sanitize.py", "prompt.py", "graph.py"},
+        )
 
     def test_os_codigos_de_andamento_vem_das_fases_na_ordem(self):
         self.assertEqual(ETAPAS, ("LENDO_PDF", "IDENTIFICANDO", "BUSCANDO_TERMOS", "VALIDANDO", "FINALIZANDO"))

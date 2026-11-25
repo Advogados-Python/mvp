@@ -11,7 +11,7 @@ from typing import Annotated, Literal, Optional
 
 from fastapi import Depends, Request
 
-from pydantic import AliasChoices, Field, PrivateAttr
+from pydantic import AliasChoices, Field, PrivateAttr, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 RAIZ = Path(__file__).resolve().parent.parent  # backend/config.py -> raiz do projeto
@@ -50,6 +50,14 @@ class Configuracoes(BaseSettings):
     workers_analise: int = 2              # análises simultâneas (threads)
     fila_sincrona: bool = False           # True = analisa dentro da requisição (testes/depuração)
     sse_duracao_maxima: float = 30        # segundos que o acompanhamento ao vivo (SSE) fica aberto antes de pedir que o navegador reabra
+
+    # Camada de IA (backend/ai_services). Sem chave, a rota /api/ia/analise responde 503 e o resto da API segue normal.
+    # A chave vem de RIBEIRO_OPENAI_API_KEY ou do nome padrão OPENAI_API_KEY (que também vale no arquivo .env).
+    openai_api_key: Optional[SecretStr] = Field(default=None, validation_alias=AliasChoices("RIBEIRO_OPENAI_API_KEY", "OPENAI_API_KEY"))
+    ia_modelo: str = "gpt-5-nano"
+    ia_esforco: Literal["minimal", "low", "medium", "high"] = "low"  # esforço de raciocínio (só vale para modelos gpt-5/o*)
+    ia_timeout_segundos: float = 180      # um processo grande (centenas de páginas) leva dezenas de segundos
+    ia_max_caracteres: int = 1_000_000    # teto do texto enviado ao modelo (~285 mil tokens); acima disso a rota recusa (413)
 
     @property
     def producao(self) -> bool:
