@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -84,6 +85,12 @@ export function FormLogin() {
           {enviando && <LoaderCircle aria-hidden className="size-4 animate-spin" />}
           Entrar
         </button>
+        <p className="text-center text-sm text-muted">
+          Não tem conta?{" "}
+          <Link href="/registrar" className="font-medium text-accent underline-offset-4 hover:underline">
+            Registre-se
+          </Link>
+        </p>
       </form>
     </div>
   );

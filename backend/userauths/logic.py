@@ -10,7 +10,8 @@ from fastapi import HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pwdlib import PasswordHash
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -95,9 +96,12 @@ def buscar_por_email(db: Session, email: str) -> Optional[Usuario]:
     return db.scalar(select(Usuario).where(Usuario.email == email.strip().lower()))
 
 
-def criar_usuario(db: Session, dados: UsuarioCriar) -> Usuario:
-    """Grava o usuário já com a senha em hash. Levanta ErroEmailJaCadastrado se o e-mail existir."""
-    usuario = Usuario(email=dados.email, nome=dados.nome, senha_hash=gerar_hash(dados.senha), admin=dados.admin)
+def criar_usuario(db: Session, dados: UsuarioCriar, *, ativo: bool = True, oab: Optional[str] = None) -> Usuario:
+    """Grava o usuário já com a senha em hash. Levanta ErroEmailJaCadastrado se o e-mail existir.
+    O hash é calculado antes de saber se o e-mail existe: o Registre-se responde no mesmo tempo nos dois casos."""
+    usuario = Usuario(
+        email=dados.email, nome=dados.nome, senha_hash=gerar_hash(dados.senha), admin=dados.admin, ativo=ativo, oab=oab
+    )
     db.add(usuario)
     try:
         db.commit()
@@ -105,6 +109,16 @@ def criar_usuario(db: Session, dados: UsuarioCriar) -> Usuario:
         db.rollback()
         raise ErroEmailJaCadastrado(dados.email) from None
     return usuario
+
+
+def adicionar_colunas_novas(motor: Engine) -> None:
+    """O create_all cria tabela que falta, mas não acrescenta coluna em tabela que já existe. Bancos criados antes do
+    Registre-se (o do Railway, o SQLite local) ganham aqui a coluna `oab`. Roda na subida e é segura para repetir."""
+    colunas = {coluna["name"] for coluna in inspect(motor).get_columns("usuarios")}
+    if "oab" not in colunas:
+        with motor.begin() as conexao:
+            conexao.execute(text("ALTER TABLE usuarios ADD COLUMN oab VARCHAR(12)"))
+        registro.info("Coluna usuarios.oab adicionada.")
 
 
 def garantir_administrador_inicial(fabrica: sessionmaker, config: Configuracoes) -> None:

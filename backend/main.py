@@ -44,7 +44,7 @@ from .receive.store import ArmazemPdf
 from .search import api as search_api
 from .userauths import api as userauths_api
 from .userauths import models as _modelos_usuarios  # noqa: F401
-from .userauths.logic import garantir_administrador_inicial, tratar_erro_de_validacao
+from .userauths.logic import adicionar_colunas_novas, garantir_administrador_inicial, tratar_erro_de_validacao
 from .userauths.models import LimitadorLogin
 from .validate import api as validate_api
 
@@ -65,6 +65,7 @@ def criar_app(config: Optional[Configuracoes] = None) -> FastAPI:
         config.pasta_dados.mkdir(parents=True, exist_ok=True)
         # create_all cria o que falta, mas não altera tabelas existentes: mudanças de esquema pedem Alembic.
         db.Base.metadata.create_all(motor)
+        adicionar_colunas_novas(motor)  # usuarios.oab em bancos criados antes do Registre-se
         migrar_resultados_antigos(motor, fabrica)  # resultado que estava na coluna JSON de `processos` passa para as tabelas das fases
         garantir_administrador_inicial(fabrica, config)
         fila.recuperar()
@@ -80,6 +81,7 @@ def criar_app(config: Optional[Configuracoes] = None) -> FastAPI:
     app.state.armazem = armazem
     app.state.fila = fila
     app.state.limitador = LimitadorLogin(config.login_max_tentativas, config.login_janela_segundos)
+    app.state.limitador_registro = LimitadorLogin(config.registro_max_por_ip, config.registro_janela_segundos)
 
     app.add_exception_handler(RequestValidationError, tratar_erro_de_validacao)  # sem ecoar o valor enviado (senha)
     app.add_middleware(

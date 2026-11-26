@@ -1,5 +1,15 @@
 import { avisarNaoAutorizado, lerToken } from "./sessao";
-import type { EstadoAnalise, EventoAnalise, Fases, Processo, RespostaEnvio, ResumoProcesso, Token, Usuario } from "./tipos";
+import type {
+  EstadoAnalise,
+  EventoAnalise,
+  Fases,
+  NovoCadastro,
+  Processo,
+  RespostaEnvio,
+  ResumoProcesso,
+  Token,
+  Usuario,
+} from "./tipos";
 
 // Endereço da API (backend/main.py). NEXT_PUBLIC_* é gravado no bundle durante o `next build`:
 // mudou o endereço, rode o build de novo.
@@ -17,9 +27,21 @@ export class ErroApi extends Error {
 
 const MENSAGEM_SEM_CONEXAO = `Não foi possível conectar à API (${API_URL}). Ela está rodando? Na raiz do projeto: uvicorn backend.main:app --reload`;
 
+const ROTULOS_DOS_CAMPOS: Record<string, string> = { nome: "Nome", email: "E-mail", senha: "Senha", oab: "OAB", nova_senha: "Nova senha" };
+
 function mensagemDoCorpo(corpo: unknown, status: number): string {
   const detalhe = (corpo as { detail?: unknown } | null)?.detail;
-  return typeof detalhe === "string" ? detalhe : `A API respondeu com erro ${status}.`;
+  if (typeof detalhe === "string") return detalhe;
+  // 422: a API devolve [{loc: ["body", "oab"], msg: "..."}] já em português (e nunca ecoa o valor enviado)
+  if (Array.isArray(detalhe)) {
+    const linhas = detalhe.flatMap((erro: { loc?: unknown[]; msg?: unknown }) => {
+      if (typeof erro?.msg !== "string") return [];
+      const campo = String(erro.loc?.at(-1) ?? "");
+      return [ROTULOS_DOS_CAMPOS[campo] ? `${ROTULOS_DOS_CAMPOS[campo]}: ${erro.msg}` : erro.msg];
+    });
+    if (linhas.length) return linhas.join(" ");
+  }
+  return `A API respondeu com erro ${status}.`;
 }
 
 interface OpcoesPedido extends RequestInit {
@@ -58,6 +80,14 @@ export const api = {
       tratar401: false,
     }),
   eu: () => pedir<Usuario>("/api/auth/eu"),
+  // A conta nasce inativa: a resposta é a mesma para e-mail novo e já cadastrado (não revela quem tem conta).
+  registrar: (dados: NovoCadastro) =>
+    pedir<{ mensagem: string }>("/api/auth/registrar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dados),
+      tratar401: false,
+    }),
 
   listar: async () => (await pedir<{ processos: ResumoProcesso[] }>("/api/processos")).processos,
   obter: (id: string) => pedir<Processo>(`/api/processos/${encodeURIComponent(id)}`),

@@ -37,6 +37,8 @@ class Configuracoes(BaseSettings):
     link_pdf_segundos: int = 120          # validade do link assinado para abrir o PDF numa nova aba
     login_max_tentativas: int = 5         # falhas seguidas (por IP + e-mail) antes de bloquear
     login_janela_segundos: int = 900
+    registro_max_por_ip: int = 5          # cadastros pelo Registre-se aceitos de um mesmo IP dentro da janela
+    registro_janela_segundos: int = 3600
 
     # Primeiro administrador: criado na subida se ainda não houver nenhum usuário.
     admin_email: Optional[str] = None

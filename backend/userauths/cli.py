@@ -3,8 +3,10 @@
     python -m backend.userauths.cli criar-usuario --email ana@exemplo.com --nome "Ana" --admin
     python -m backend.userauths.cli redefinir-senha --email ana@exemplo.com
     python -m backend.userauths.cli listar
+    python -m backend.userauths.cli ativar-usuario --email ana@exemplo.com     # libera quem se registrou pela tela
 
 A senha é pedida no terminal (não aparece na tela nem no histórico do shell).
+No Railway:  railway ssh --service backend  e, lá dentro, o mesmo comando.
 """
 
 import argparse
@@ -17,7 +19,7 @@ from sqlalchemy import select
 from .. import db as banco
 from ..config import obter_configuracoes
 from ..receive import models as _modelos_processos  # noqa: F401  (a FK de processos precisa da tabela no metadata)
-from .logic import buscar_por_email, criar_usuario, gerar_hash, resumir_erros
+from .logic import adicionar_colunas_novas, buscar_por_email, criar_usuario, gerar_hash, resumir_erros
 from .models import ErroEmailJaCadastrado, Usuario
 from .schemas import SENHA_MAXIMA, SENHA_MINIMA, UsuarioCriar
 
@@ -46,16 +48,32 @@ def main(argv=None) -> int:
     redefinir = sub.add_parser("redefinir-senha")
     redefinir.add_argument("--email", required=True)
     sub.add_parser("listar")
+    ativar = sub.add_parser("ativar-usuario", help="libera uma conta inativa (ex.: quem se registrou pela tela)")
+    ativar.add_argument("--email", required=True)
     args = parser.parse_args(argv)
 
     config = obter_configuracoes()
     config.pasta_dados.mkdir(parents=True, exist_ok=True)
     motor = banco.criar_motor(config.url_do_banco)
     banco.Base.metadata.create_all(motor)
+    adicionar_colunas_novas(motor)  # a CLI pode rodar antes de a API subir com a coluna nova
     with banco.criar_fabrica_sessoes(motor)() as db:
         if args.comando == "listar":
             for u in db.scalars(select(Usuario).order_by(Usuario.id)):
-                print(f"{u.id:>3}  {u.email:<35} {u.nome:<25} {'admin' if u.admin else '     '} {'ativo' if u.ativo else 'DESATIVADO'}")
+                situacao = "ativo" if u.ativo else "INATIVO (aguarda liberação)"
+                print(f"{u.id:>3}  {u.email:<35} {u.nome:<25} {u.oab or '-':<10} {'admin' if u.admin else '     '} {situacao}")
+            return 0
+
+        if args.comando == "ativar-usuario":
+            usuario = buscar_por_email(db, args.email)
+            if usuario is None:
+                sys.exit("Usuário não encontrado.")
+            if usuario.ativo:
+                print(f"{usuario.email} já estava ativo.")
+                return 0
+            usuario.ativo = True
+            db.commit()
+            print(f"Conta liberada: {usuario.email} ({usuario.nome}, OAB {usuario.oab or '-'}). Já pode entrar.")
             return 0
 
         if args.comando == "criar-usuario":

@@ -24,7 +24,8 @@ USER ribeiro
 ENV RIBEIRO_AMBIENTE=producao \
     RIBEIRO_PASTA_DADOS=/data \
     PORT=8000
-VOLUME /data
+# Sem a instrução VOLUME: o Railway recusa o build com ela ("use Railway Volumes"). O volume é montado de fora:
+# no docker-compose (dados:/data) e no Railway (volume do serviço em /data, com RAILWAY_RUN_UID=0, pois ele monta como root).
 EXPOSE 8000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \

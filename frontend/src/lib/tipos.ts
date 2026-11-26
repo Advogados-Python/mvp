@@ -40,7 +40,16 @@ export interface Usuario {
   nome: string;
   admin: boolean;
   ativo: boolean;
+  oab: string | null; // "SP123456"; null em quem o administrador cadastrou
   criado_em: string;
+}
+
+/** O que o Registre-se envia. A confirmação da senha fica só no formulário. */
+export interface NovoCadastro {
+  nome: string;
+  email: string;
+  senha: string;
+  oab: string;
 }
 
 export interface Token {

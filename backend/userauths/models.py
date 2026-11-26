@@ -2,6 +2,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,8 +17,9 @@ class Usuario(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)  # sempre minúsculo
     nome: Mapped[str] = mapped_column(String(120))
     senha_hash: Mapped[str] = mapped_column(String(255))
-    ativo: Mapped[bool] = mapped_column(default=True)
+    ativo: Mapped[bool] = mapped_column(default=True)  # quem se registra sozinho nasce False, até um admin liberar
     admin: Mapped[bool] = mapped_column(default=False)
+    oab: Mapped[Optional[str]] = mapped_column(String(12), default=None)  # "SP123456"; vazio em quem o admin cadastrou
     criado_em: Mapped[datetime] = mapped_column(DataHoraUTC, default=agora)
 
 

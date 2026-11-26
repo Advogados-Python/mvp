@@ -35,7 +35,13 @@ class TestLogin(BaseApi):
         alvo = next(u["id"] for u in self.client.get("/api/usuarios", headers=self.cabecalho(admin)).json() if u["email"] == "inativo@teste.com")
         self.client.patch(f"/api/usuarios/{alvo}", headers=self.cabecalho(admin), json={"ativo": False})
         resposta = self.client.post("/api/auth/login", data={"username": "inativo@teste.com", "password": SENHA})
-        self.assertEqual(resposta.status_code, 401)
+        # senha certa: explica que a conta não está liberada (403), sem token
+        self.assertEqual(resposta.status_code, 403)
+        self.assertIn("não está liberada", resposta.json()["detail"])
+        self.assertNotIn("access_token", resposta.json())
+        # senha errada numa conta desativada: a resposta é a de sempre, não revela que a conta existe
+        errada = self.client.post("/api/auth/login", data={"username": "inativo@teste.com", "password": "errada-errada"})
+        self.assertEqual((errada.status_code, errada.json()["detail"]), (401, "E-mail ou senha inválidos."))
 
     def test_bloqueia_apos_tres_falhas_mesmo_com_a_senha_certa(self):
         for _ in range(3):

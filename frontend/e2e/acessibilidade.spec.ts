@@ -43,6 +43,17 @@ for (const tela of [{ nome: "desktop", largura: 1440, altura: 900 }, { nome: "ce
       await auditar(page, "login");
     });
 
+    test("registre-se, vazio e com os erros de cada campo", async ({ page }) => {
+      await page.addInitScript(() => window.localStorage.removeItem("ribeiro.token"));
+      await page.goto("/registrar");
+      await expect(page.getByRole("heading", { name: "Registre-se" })).toBeVisible();
+      await auditar(page, "registre-se");
+      await page.getByLabel("OAB").fill("XX1");
+      await page.getByRole("button", { name: "Criar conta" }).click();
+      await expect(page.getByText("A sigla de estado 'XX' não existe.")).toBeVisible();
+      await auditar(page, "registre-se com erros");
+    });
+
     test("histórico vazio", async ({ page }) => {
       await simularApi(page, { lista: [] });
       await page.goto("/");
