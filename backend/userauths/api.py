@@ -5,14 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 
-from ..config import Config
+from ..config import Config, Configuracoes
 from ..db import Sessao
 from .deps import Administrador, UsuarioLogado
 from .logic import buscar_por_email, conferir_senha, criar_token_acesso, criar_usuario, gerar_hash
 from .models import ErroEmailJaCadastrado, Usuario
-from .schemas import (
-    AlterarSenha, RegistroRecebido, TokenSaida, UsuarioAtualizar, UsuarioCriar, UsuarioRegistrar, UsuarioSaida,
-)
+from .schemas import AlterarSenha, TokenSaida, UsuarioAtualizar, UsuarioCriar, UsuarioRegistrar, UsuarioSaida
 
 registro = logging.getLogger("ribeiro.usuarios")
 
@@ -44,22 +42,25 @@ def login(request: Request, formulario: Annotated[OAuth2PasswordRequestForm, Dep
         # mesma mensagem para e-mail inexistente e senha errada: não ajuda quem está tentando adivinhar
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "E-mail ou senha inválidos.", headers={"WWW-Authenticate": "Bearer"})
     if not usuario.ativo:
-        # Só chega aqui quem acertou a senha: dizer que a conta espera liberação não revela nada a quem está adivinhando,
-        # e quem acabou de se registrar entende por que não entrou.
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Sua conta ainda não está liberada. Aguarde a aprovação de um administrador.")
+        # Só chega aqui quem acertou a senha: dizer que a conta foi desativada não revela nada a quem está adivinhando.
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Esta conta está desativada. Fale com o administrador.")
 
     limitador.limpar(chave)
+    return _entrar(usuario, request, config)
+
+
+def _entrar(usuario: Usuario, request: Request, config: Configuracoes) -> TokenSaida:
     token, expira = criar_token_acesso(usuario, request.app.state.segredo, config.token_minutos)
     return TokenSaida(access_token=token, expira_em=expira, usuario=UsuarioSaida.model_validate(usuario))
 
 
 @auth_router.post(
     "/registrar",
-    response_model=RegistroRecebido,
-    status_code=status.HTTP_202_ACCEPTED,
-    summary="Registre-se: cria a conta INATIVA, à espera da liberação de um administrador",
+    response_model=TokenSaida,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registre-se: cria a conta já ativa e devolve o token, como o login",
 )
-def registrar(dados: UsuarioRegistrar, request: Request, db: Sessao):
+def registrar(dados: UsuarioRegistrar, request: Request, db: Sessao, config: Config):
     limitador = request.app.state.limitador_registro
     ip = request.client.host if request.client else "?"
     espera = limitador.segundos_de_bloqueio(ip)
@@ -68,13 +69,13 @@ def registrar(dados: UsuarioRegistrar, request: Request, db: Sessao):
     limitador.registrar_falha(ip)  # conta TODO cadastro (não só os que falham): cada um grava no banco e gasta um hash Argon2
 
     try:
-        criar_usuario(db, UsuarioCriar(email=dados.email, nome=dados.nome, senha=dados.senha), ativo=False, oab=dados.oab)
-        registro.info("Novo cadastro aguardando liberação: %s (OAB %s)", dados.email, dados.oab)
+        usuario = criar_usuario(db, UsuarioCriar(email=dados.email, nome=dados.nome, senha=dados.senha), oab=dados.oab)
     except ErroEmailJaCadastrado:
-        # Mesma resposta de um cadastro novo, e o usuário existente fica intocado: o Registre-se não serve para descobrir
-        # quais e-mails têm conta (o login também não serve).
-        registro.info("Registre-se com e-mail já cadastrado: %s (ignorado)", dados.email)
-    return RegistroRecebido()
+        # A conta existente fica intocada. Dizer que o e-mail já tem conta é o preço de entrar direto após o cadastro;
+        # o limite por IP acima impede usar isto para varrer listas de e-mails.
+        raise HTTPException(status.HTTP_409_CONFLICT, "Já existe uma conta com esse e-mail. Entre com a sua senha.") from None
+    registro.info("Novo cadastro pelo Registre-se: %s (OAB %s)", dados.email, dados.oab)
+    return _entrar(usuario, request, config)
 
 
 @auth_router.get("/eu", response_model=UsuarioSaida, summary="Quem está logado")

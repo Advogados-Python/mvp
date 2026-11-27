@@ -96,12 +96,9 @@ def buscar_por_email(db: Session, email: str) -> Optional[Usuario]:
     return db.scalar(select(Usuario).where(Usuario.email == email.strip().lower()))
 
 
-def criar_usuario(db: Session, dados: UsuarioCriar, *, ativo: bool = True, oab: Optional[str] = None) -> Usuario:
-    """Grava o usuário já com a senha em hash. Levanta ErroEmailJaCadastrado se o e-mail existir.
-    O hash é calculado antes de saber se o e-mail existe: o Registre-se responde no mesmo tempo nos dois casos."""
-    usuario = Usuario(
-        email=dados.email, nome=dados.nome, senha_hash=gerar_hash(dados.senha), admin=dados.admin, ativo=ativo, oab=oab
-    )
+def criar_usuario(db: Session, dados: UsuarioCriar, *, oab: Optional[str] = None) -> Usuario:
+    """Grava o usuário (ativo) já com a senha em hash. Levanta ErroEmailJaCadastrado se o e-mail existir."""
+    usuario = Usuario(email=dados.email, nome=dados.nome, senha_hash=gerar_hash(dados.senha), admin=dados.admin, oab=oab)
     db.add(usuario)
     try:
         db.commit()

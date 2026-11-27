@@ -3,7 +3,7 @@
     python -m backend.userauths.cli criar-usuario --email ana@exemplo.com --nome "Ana" --admin
     python -m backend.userauths.cli redefinir-senha --email ana@exemplo.com
     python -m backend.userauths.cli listar
-    python -m backend.userauths.cli ativar-usuario --email ana@exemplo.com     # libera quem se registrou pela tela
+    python -m backend.userauths.cli ativar-usuario --email ana@exemplo.com     # reativa uma conta desativada
 
 A senha é pedida no terminal (não aparece na tela nem no histórico do shell).
 No Railway:  railway ssh --service backend  e, lá dentro, o mesmo comando.
@@ -48,7 +48,7 @@ def main(argv=None) -> int:
     redefinir = sub.add_parser("redefinir-senha")
     redefinir.add_argument("--email", required=True)
     sub.add_parser("listar")
-    ativar = sub.add_parser("ativar-usuario", help="libera uma conta inativa (ex.: quem se registrou pela tela)")
+    ativar = sub.add_parser("ativar-usuario", help="reativa uma conta desativada")
     ativar.add_argument("--email", required=True)
     args = parser.parse_args(argv)
 
@@ -60,7 +60,7 @@ def main(argv=None) -> int:
     with banco.criar_fabrica_sessoes(motor)() as db:
         if args.comando == "listar":
             for u in db.scalars(select(Usuario).order_by(Usuario.id)):
-                situacao = "ativo" if u.ativo else "INATIVO (aguarda liberação)"
+                situacao = "ativo" if u.ativo else "INATIVO"
                 print(f"{u.id:>3}  {u.email:<35} {u.nome:<25} {u.oab or '-':<10} {'admin' if u.admin else '     '} {situacao}")
             return 0
 
@@ -73,7 +73,7 @@ def main(argv=None) -> int:
                 return 0
             usuario.ativo = True
             db.commit()
-            print(f"Conta liberada: {usuario.email} ({usuario.nome}, OAB {usuario.oab or '-'}). Já pode entrar.")
+            print(f"Conta reativada: {usuario.email} ({usuario.nome}, OAB {usuario.oab or '-'}). Já pode entrar.")
             return 0
 
         if args.comando == "criar-usuario":

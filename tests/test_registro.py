@@ -1,4 +1,4 @@
-"""O Registre-se da tela de login: conta nasce inativa, OAB validada e normalizada, liberação pelo administrador."""
+"""O Registre-se da tela de login: conta nasce ativa e já entra, OAB validada e normalizada."""
 
 import io
 import sqlite3
@@ -47,37 +47,47 @@ class TestRegistrar(BaseApi):
         with self.app.state.fabrica() as db:
             return db.query(Usuario).filter_by(email=email).one()
 
-    def test_cria_conta_inativa_com_oab_normalizada_e_sem_admin(self):
+    def test_cria_conta_ativa_com_oab_normalizada_sem_admin_e_ja_devolve_o_token(self):
         resposta = self.registrar(admin=True)  # campo extra é ignorado: ninguém se registra como administrador
-        self.assertEqual(resposta.status_code, 202, resposta.text)
-        self.assertIn("Cadastro recebido", resposta.json()["mensagem"])
+        self.assertEqual(resposta.status_code, 201, resposta.text)
+        corpo = resposta.json()
+        self.assertEqual(corpo["token_type"], "bearer")
+        self.assertEqual(
+            {k: corpo["usuario"][k] for k in ("email", "nome", "oab", "ativo", "admin")},
+            {"email": "ana@exemplo.com", "nome": "Ana Maria Souza", "oab": "SP123456", "ativo": True, "admin": False},
+        )
         usuario = self.usuario("ana@exemplo.com")
-        self.assertEqual((usuario.nome, usuario.oab, usuario.ativo, usuario.admin), ("Ana Maria Souza", "SP123456", False, False))
+        self.assertEqual((usuario.nome, usuario.oab, usuario.ativo, usuario.admin), ("Ana Maria Souza", "SP123456", True, False))
         self.assertNotIn(NOVO["senha"], usuario.senha_hash)
 
-    def test_nao_entra_ate_ser_liberada_e_depois_entra(self):
-        self.registrar()
-        bloqueado = self.client.post("/api/auth/login", data={"username": "ana@exemplo.com", "password": NOVO["senha"]})
-        self.assertEqual(bloqueado.status_code, 403)
-        self.assertIn("Aguarde a aprovação", bloqueado.json()["detail"])
+        # o token do cadastro já vale, e o login com a senha escolhida também
+        eu = self.client.get("/api/auth/eu", headers=self.cabecalho(corpo["access_token"])).json()
+        self.assertEqual((eu["email"], eu["oab"], eu["admin"]), ("ana@exemplo.com", "SP123456", False))
+        self.login("ana@exemplo.com", NOVO["senha"])
 
-        admin = self.cabecalho(self.login())
-        lista = self.client.get("/api/usuarios", headers=admin).json()
-        pendente = next(u for u in lista if u["email"] == "ana@exemplo.com")
-        self.assertEqual((pendente["ativo"], pendente["oab"]), (False, "SP123456"))
-        self.client.patch(f"/api/usuarios/{pendente['id']}", headers=admin, json={"ativo": True})
+    def test_conta_nova_so_ve_os_proprios_processos(self):
+        token = self.registrar().json()["access_token"]
+        processos = self.client.get("/api/processos", headers=self.cabecalho(token))
+        self.assertEqual(processos.status_code, 200, processos.text)
+        self.assertEqual(processos.json()["processos"], [])
 
-        token = self.login("ana@exemplo.com", NOVO["senha"])
-        eu = self.client.get("/api/auth/eu", headers=self.cabecalho(token)).json()
-        self.assertEqual((eu["oab"], eu["admin"]), ("SP123456", False))
-
-    def test_email_ja_cadastrado_responde_igual_e_nao_mexe_na_conta(self):
-        novo = self.registrar()
+    def test_email_ja_cadastrado_e_409_e_nao_mexe_na_conta(self):
         repetido = self.registrar(email=ADMIN, nome="Intruso", senha="outra-senha-qualquer", oab="GO1")
-        self.assertEqual((repetido.status_code, repetido.json()), (novo.status_code, novo.json()))
+        self.assertEqual(repetido.status_code, 409)
+        self.assertIn("Já existe uma conta com esse e-mail", repetido.json()["detail"])
+        self.assertNotIn("access_token", repetido.json())
         admin = self.usuario(ADMIN)
         self.assertEqual((admin.nome, admin.ativo, admin.admin, admin.oab), ("Administrador", True, True, None))
         self.login(ADMIN, SENHA)  # a senha continua a mesma
+
+    def test_conta_desativada_pelo_admin_nao_entra(self):
+        self.registrar()
+        admin = self.cabecalho(self.login())
+        alvo = next(u["id"] for u in self.client.get("/api/usuarios", headers=admin).json() if u["email"] == "ana@exemplo.com")
+        self.client.patch(f"/api/usuarios/{alvo}", headers=admin, json={"ativo": False})
+        recusado = self.client.post("/api/auth/login", data={"username": "ana@exemplo.com", "password": NOVO["senha"]})
+        self.assertEqual(recusado.status_code, 403)
+        self.assertIn("desativada", recusado.json()["detail"])
 
     def test_oab_invalida_e_422_em_portugues_e_nao_cria_nada(self):
         formato = self.registrar(oab="12345")
@@ -99,16 +109,19 @@ class TestRegistrar(BaseApi):
 
     def test_limita_cadastros_por_ip(self):
         self.app.state.limitador_registro = LimitadorLogin(max_tentativas=2, janela_segundos=3600)
-        self.assertEqual(self.registrar(email="a1@teste.com").status_code, 202)
-        self.assertEqual(self.registrar(email="a2@teste.com").status_code, 202)
+        self.assertEqual(self.registrar(email="a1@teste.com").status_code, 201)
+        self.assertEqual(self.registrar(email="a2@teste.com").status_code, 201)
         terceiro = self.registrar(email="a3@teste.com")
         self.assertEqual(terceiro.status_code, 429)
         self.assertIn("Retry-After", terceiro.headers)
         with self.app.state.fabrica() as db:
             self.assertEqual(db.query(Usuario).filter_by(email="a3@teste.com").count(), 0)
 
-    def test_cli_lista_mostra_a_oab_e_ativa_a_conta(self):
+    def test_cli_lista_mostra_a_oab_e_reativa_a_conta(self):
         self.registrar()
+        with self.app.state.fabrica() as db:
+            db.query(Usuario).filter_by(email="ana@exemplo.com").update({"ativo": False})
+            db.commit()
         config = configuracao(self.pasta)
         saida = io.StringIO()
         with mock.patch("backend.userauths.cli.obter_configuracoes", return_value=config), redirect_stdout(saida):
@@ -117,8 +130,8 @@ class TestRegistrar(BaseApi):
             cli.main(["ativar-usuario", "--email", "ana@exemplo.com"])
         texto = saida.getvalue()
         self.assertIn("SP123456", texto)
-        self.assertIn("INATIVO (aguarda liberação)", texto)
-        self.assertIn("Conta liberada: ana@exemplo.com", texto)
+        self.assertIn("INATIVO", texto)
+        self.assertIn("Conta reativada: ana@exemplo.com", texto)
         self.assertIn("já estava ativo", texto)
         self.login("ana@exemplo.com", NOVO["senha"])
 

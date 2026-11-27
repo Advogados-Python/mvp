@@ -80,9 +80,9 @@ export const api = {
       tratar401: false,
     }),
   eu: () => pedir<Usuario>("/api/auth/eu"),
-  // A conta nasce inativa: a resposta é a mesma para e-mail novo e já cadastrado (não revela quem tem conta).
+  // A conta nasce ativa e a resposta é a mesma do login (token + usuário). E-mail que já tem conta: 409.
   registrar: (dados: NovoCadastro) =>
-    pedir<{ mensagem: string }>("/api/auth/registrar", {
+    pedir<Token>("/api/auth/registrar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(dados),

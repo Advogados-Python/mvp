@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ErroApi, api } from "@/lib/api";
 import { aoExpirar, gravarToken, limparToken, lerToken } from "@/lib/sessao";
-import type { Usuario } from "@/lib/tipos";
+import type { NovoCadastro, Token, Usuario } from "@/lib/tipos";
 
 type Estado =
   | { status: "carregando" }
@@ -14,6 +14,7 @@ type Estado =
 interface ContextoAuth {
   estado: Estado;
   entrar: (email: string, senha: string) => Promise<void>;
+  registrar: (dados: NovoCadastro) => Promise<void>;
   sair: () => void;
   tentarDeNovo: () => void;
 }
@@ -56,11 +57,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [tentativa]);
 
-  const entrar = useCallback(async (email: string, senha: string) => {
-    const resposta = await api.login(email, senha);
+  const abrirSessao = useCallback((resposta: Token) => {
     gravarToken(resposta.access_token);
     setEstado({ status: "autenticado", usuario: resposta.usuario });
   }, []);
+
+  const entrar = useCallback(
+    async (email: string, senha: string) => abrirSessao(await api.login(email, senha)),
+    [abrirSessao],
+  );
+
+  // O cadastro já devolve o token: a pessoa entra sem passar pela tela de login.
+  const registrar = useCallback(async (dados: NovoCadastro) => abrirSessao(await api.registrar(dados)), [abrirSessao]);
 
   const sair = useCallback(() => {
     limparToken();
@@ -72,6 +80,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTentativa((atual) => atual + 1);
   }, []);
 
-  const valor = useMemo(() => ({ estado, entrar, sair, tentarDeNovo }), [estado, entrar, sair, tentarDeNovo]);
+  const valor = useMemo(
+    () => ({ estado, entrar, registrar, sair, tentarDeNovo }),
+    [estado, entrar, registrar, sair, tentarDeNovo],
+  );
   return <Contexto.Provider value={valor}>{children}</Contexto.Provider>;
 }

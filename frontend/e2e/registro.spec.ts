@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import { API_URL, tokenDaApi } from "./apoio";
+import { EMAIL } from "./apoio";
 
-// O Registre-se cria contas DE VERDADE (inativas) na API de teste. Cada teste usa um e-mail novo; a API de teste
+// O Registre-se cria contas DE VERDADE (ativas) na API de teste. Cada teste usa um e-mail novo; a API de teste
 // precisa de RIBEIRO_REGISTRO_MAX_POR_IP alto (o padrão, 5 por hora, acaba no meio da suíte; veja playwright.config.ts).
 const emailNovo = () => `e2e-registro-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@teste.com`;
 const SENHA_NOVA = "senha-da-ana-123";
@@ -57,8 +57,9 @@ test("o formulário confere os campos antes de enviar: vazios, senhas diferentes
   expect(chamadas).toBe(0);
 });
 
-test("cadastro completo: conta nasce inativa, o login explica a espera e, liberada pelo admin, entra", async ({ page, request }) => {
+test("cadastro completo: a conta nasce ativa, entra direto e depois entra de novo pelo login", async ({ page }) => {
   const email = emailNovo();
+  await page.addInitScript(() => window.localStorage.removeItem("ribeiro.token"));
   await page.goto("/registrar");
   await preencher(page, { nome: "Ana Maria Souza", email, senha: SENHA_NOVA, confirmacao: SENHA_NOVA, oab: "123.456/sp" });
   await page.getByLabel("OAB").blur();
@@ -67,27 +68,30 @@ test("cadastro completo: conta nasce inativa, o login explica a espera e, libera
   const resposta = page.waitForResponse("**/api/auth/registrar");
   await page.getByRole("button", { name: "Criar conta" }).click();
   const enviada = await resposta;
-  expect(enviada.status()).toBe(202);
+  expect(enviada.status()).toBe(201);
   expect(enviada.request().postDataJSON()).toEqual({ nome: "Ana Maria Souza", email, senha: SENHA_NOVA, oab: "SP123456" });
-  await expect(page.getByText("Cadastro recebido", { exact: true })).toBeVisible();
-  await expect(page.getByText("Você poderá entrar assim que a sua conta for liberada.")).toBeVisible();
+  expect((await enviada.json()).usuario).toMatchObject({ email, ativo: true, admin: false, oab: "SP123456" });
 
-  // antes da liberação: o login recusa com a explicação (e não com "senha inválida")
-  await page.getByRole("link", { name: "Voltar para Entrar" }).click();
+  // entrou sem passar pelo login, e só vê os próprios processos (nenhum)
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText("Nenhum processo analisado ainda")).toBeVisible();
+  await expect(page.getByText("Ana Maria Souza")).toBeVisible();
+
+  // sai e entra de novo com a senha escolhida no cadastro
+  await page.getByRole("button", { name: "Sair" }).click();
+  await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel("E-mail").fill(email);
   await page.getByLabel("Senha").fill(SENHA_NOVA);
   await page.getByRole("button", { name: "Entrar" }).click();
-  await expect(page.getByText("Sua conta ainda não está liberada")).toBeVisible();
-  await expect(page).toHaveURL(/\/login$/);
-
-  // o administrador libera (PATCH ativo=true) e a mesma pessoa entra
-  const admin = { Authorization: `Bearer ${await tokenDaApi(request)}` };
-  const usuarios = await (await request.get(`${API_URL}/api/usuarios`, { headers: admin })).json();
-  const nova = usuarios.find((u: { email: string }) => u.email === email);
-  expect(nova).toMatchObject({ ativo: false, admin: false, oab: "SP123456", nome: "Ana Maria Souza" });
-  expect((await request.patch(`${API_URL}/api/usuarios/${nova.id}`, { headers: admin, data: { ativo: true } })).ok()).toBe(true);
-
-  await page.getByRole("button", { name: "Entrar" }).click();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByText("Nenhum processo analisado ainda")).toBeVisible(); // conta nova: só os próprios processos
+  await expect(page.getByText("Nenhum processo analisado ainda")).toBeVisible();
+});
+
+test("e-mail que já tem conta: o formulário avisa e continua na tela de cadastro", async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.removeItem("ribeiro.token"));
+  await page.goto("/registrar");
+  await preencher(page, { nome: "Outra Pessoa", email: EMAIL, senha: SENHA_NOVA, confirmacao: SENHA_NOVA, oab: "GO12345" });
+  await page.getByRole("button", { name: "Criar conta" }).click();
+  await expect(page.getByText("Já existe uma conta com esse e-mail. Entre com a sua senha.")).toBeVisible();
+  await expect(page).toHaveURL(/\/registrar$/);
 });

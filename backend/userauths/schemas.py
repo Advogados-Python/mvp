@@ -23,7 +23,7 @@ _OAB_UF_DEPOIS = re.compile(r"^(\d{1,6}[A-Z]?)([A-Z]{2})$")  # 123456/SP
 
 def normalizar_oab(texto: str) -> str:
     """'123.456/sp', 'SP 123456' e 'sp-123456' viram 'SP123456'. O frontend repete esta regra (frontend/src/lib/oab.ts).
-    Confere só o formato e a UF: não consulta o Cadastro Nacional da OAB (quem confere é o administrador ao liberar a conta)."""
+    Confere só o formato e a UF: não consulta o Cadastro Nacional da OAB."""
     limpo = re.sub(r"[.\-/\s]", "", texto.strip().upper())
     if casou := _OAB_UF_ANTES.match(limpo):
         uf, numero = casou.groups()
@@ -64,10 +64,6 @@ class UsuarioRegistrar(BaseModel):
     email: Email
     senha: Senha
     oab: Oab
-
-
-class RegistroRecebido(BaseModel):
-    mensagem: str = "Cadastro recebido. Um administrador vai conferir os seus dados e liberar o acesso."
 
 
 class UsuarioAtualizar(BaseModel):

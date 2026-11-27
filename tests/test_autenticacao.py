@@ -35,9 +35,9 @@ class TestLogin(BaseApi):
         alvo = next(u["id"] for u in self.client.get("/api/usuarios", headers=self.cabecalho(admin)).json() if u["email"] == "inativo@teste.com")
         self.client.patch(f"/api/usuarios/{alvo}", headers=self.cabecalho(admin), json={"ativo": False})
         resposta = self.client.post("/api/auth/login", data={"username": "inativo@teste.com", "password": SENHA})
-        # senha certa: explica que a conta não está liberada (403), sem token
+        # senha certa: explica que a conta foi desativada (403), sem token
         self.assertEqual(resposta.status_code, 403)
-        self.assertIn("não está liberada", resposta.json()["detail"])
+        self.assertIn("desativada", resposta.json()["detail"])
         self.assertNotIn("access_token", resposta.json())
         # senha errada numa conta desativada: a resposta é a de sempre, não revela que a conta existe
         errada = self.client.post("/api/auth/login", data={"username": "inativo@teste.com", "password": "errada-errada"})

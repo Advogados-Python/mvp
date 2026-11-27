@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
-import { api } from "@/lib/api";
 import { normalizarOab } from "@/lib/oab";
 import { useAuth } from "./auth-provider";
 import { Logo } from "./logo";
@@ -36,13 +35,12 @@ function validar(valores: Valores): Erros {
 }
 
 export function FormRegistro() {
-  const { estado } = useAuth();
+  const { estado, registrar } = useAuth();
   const router = useRouter();
   const [valores, setValores] = useState<Valores>(VAZIO);
   const [erros, setErros] = useState<Erros>({});
   const [enviando, setEnviando] = useState(false);
   const [erroGeral, setErroGeral] = useState<string | null>(null);
-  const [recebido, setRecebido] = useState(false);
   const formulario = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -75,16 +73,15 @@ export function FormRegistro() {
     setEnviando(true);
     try {
       const oab = normalizarOab(valores.oab);
-      await api.registrar({
+      await registrar({
         nome: valores.nome.trim(),
         email: valores.email.trim(),
         senha: valores.senha,
         oab: oab.ok ? oab.oab : valores.oab,
       });
-      setRecebido(true);
+      router.replace("/"); // a conta nasce ativa: entra direto
     } catch (falha) {
       setErroGeral(falha instanceof Error ? falha.message : "Não foi possível concluir o cadastro.");
-    } finally {
       setEnviando(false);
     }
   }
@@ -99,87 +96,73 @@ export function FormRegistro() {
         </div>
       </div>
 
-      {recebido ? (
-        <div className="vidro space-y-4 rounded-2xl p-6">
-          <Aviso tom="info" titulo="Cadastro recebido">
-            Um administrador vai conferir os seus dados e a OAB. Você poderá entrar assim que a sua conta for liberada.
+      <form ref={formulario} onSubmit={enviar} noValidate className="vidro space-y-4 rounded-2xl p-6">
+        {erroGeral && (
+          <Aviso tom="danger" titulo="Não foi possível concluir o cadastro">
+            {erroGeral}
           </Aviso>
-          <Link
-            href="/login"
-            className="inline-flex w-full items-center justify-center rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition-opacity hover:opacity-90"
-          >
-            Voltar para Entrar
+        )}
+        <CampoTexto
+          campo="nome"
+          rotulo="Nome completo"
+          autoComplete="name"
+          valor={valores.nome}
+          erro={erros.nome}
+          aoMudar={mudar}
+        />
+        <CampoTexto
+          campo="email"
+          rotulo="E-mail"
+          tipo="email"
+          autoComplete="email"
+          valor={valores.email}
+          erro={erros.email}
+          aoMudar={mudar}
+        />
+        <CampoTexto
+          campo="senha"
+          rotulo="Senha"
+          tipo="password"
+          autoComplete="new-password"
+          dica={`Mínimo de ${SENHA_MINIMA} caracteres.`}
+          valor={valores.senha}
+          erro={erros.senha}
+          aoMudar={mudar}
+        />
+        <CampoTexto
+          campo="confirmacao"
+          rotulo="Confirmação de senha"
+          tipo="password"
+          autoComplete="new-password"
+          valor={valores.confirmacao}
+          erro={erros.confirmacao}
+          aoMudar={mudar}
+        />
+        <CampoTexto
+          campo="oab"
+          rotulo="OAB"
+          autoComplete="off"
+          dica="UF + número, ex.: GO12345 ou 12345/GO."
+          valor={valores.oab}
+          erro={erros.oab}
+          aoMudar={mudar}
+          aoSair={padronizarOab}
+        />
+        <button
+          type="submit"
+          disabled={enviando}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {enviando && <LoaderCircle aria-hidden className="size-4 animate-spin" />}
+          Criar conta
+        </button>
+        <p className="text-center text-sm text-muted">
+          Já tem conta?{" "}
+          <Link href="/login" className="font-medium text-accent underline-offset-4 hover:underline">
+            Entrar
           </Link>
-        </div>
-      ) : (
-        <form ref={formulario} onSubmit={enviar} noValidate className="vidro space-y-4 rounded-2xl p-6">
-          {erroGeral && (
-            <Aviso tom="danger" titulo="Não foi possível concluir o cadastro">
-              {erroGeral}
-            </Aviso>
-          )}
-          <CampoTexto
-            campo="nome"
-            rotulo="Nome completo"
-            autoComplete="name"
-            valor={valores.nome}
-            erro={erros.nome}
-            aoMudar={mudar}
-          />
-          <CampoTexto
-            campo="email"
-            rotulo="E-mail"
-            tipo="email"
-            autoComplete="email"
-            valor={valores.email}
-            erro={erros.email}
-            aoMudar={mudar}
-          />
-          <CampoTexto
-            campo="senha"
-            rotulo="Senha"
-            tipo="password"
-            autoComplete="new-password"
-            dica={`Mínimo de ${SENHA_MINIMA} caracteres.`}
-            valor={valores.senha}
-            erro={erros.senha}
-            aoMudar={mudar}
-          />
-          <CampoTexto
-            campo="confirmacao"
-            rotulo="Confirmação de senha"
-            tipo="password"
-            autoComplete="new-password"
-            valor={valores.confirmacao}
-            erro={erros.confirmacao}
-            aoMudar={mudar}
-          />
-          <CampoTexto
-            campo="oab"
-            rotulo="OAB"
-            autoComplete="off"
-            dica="UF + número, ex.: GO12345 ou 12345/GO."
-            valor={valores.oab}
-            erro={erros.oab}
-            aoMudar={mudar}
-            aoSair={padronizarOab}
-          />
-          <button
-            type="submit"
-            disabled={enviando}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {enviando && <LoaderCircle aria-hidden className="size-4 animate-spin" />}
-            Criar conta
-          </button>
-          <p className="text-center text-sm text-muted">
-            Já tem conta?{" "}
-            <Link href="/login" className="font-medium text-accent underline-offset-4 hover:underline">
-              Entrar
-            </Link>
-          </p>
-        </form>
-      )}
+        </p>
+      </form>
     </div>
   );
 }
